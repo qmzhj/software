@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>校园通 - 即时通讯·信息查询</title>
+    <style>
+      :root {
+        --primary: #4f46e5;
+        --primary-dark: #4338ca;
+        --primary-light: #e0e7ff;
+        --bg: #f1f5f9;
+        --card: #ffffff;
+        --text: #1e293b;
+        --text-light: #64748b;
+        --border: #e2e8f0;
+        --danger: #ef4444;
+        --success: #10b981;
+        --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        --shadow-lg: 0 12px 35px rgba(0, 0, 0, 0.08);
+        --radius: 20px;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+
+      /* ---------- 登录卡片 ---------- */
+      .login-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: var(--bg);
+        z-index: 100;
+      }
+      .login-card {
+        width: 420px;
+        background: var(--card);
+        border-radius: 24px;
+        box-shadow: var(--shadow-lg);
+        padding: 40px 32px;
+        display: flex;
+        flex-direction: column;
+      }
+      .login-logo {
+        text-align: center;
+        margin-bottom: 28px;
+      }
+      .login-logo .icon {
+        font-size: 48px;
+      }
+      .login-logo h1 {
+        font-size: 24px;
+        color: var(--text);
+        margin-top: 8px;
+      }
+      .login-tabs {
+        display: flex;
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 4px;
+        margin-bottom: 25px;
+      }
+      .login-tabs button {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        background: transparent;
+        font-weight: 600;
+        color: var(--text-light);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+      .login-tabs button.active {
+        background: white;
+        color: var(--primary);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .form-panel {
+        display: none;
+      }
+      .form-panel.active {
+        display: block;
+      }
+      .form-group {
+        margin-bottom: 16px;
+      }
+      .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 6px;
+      }
+      .form-group input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 14px;
+        outline: none;
+        background: #f8fafc;
+        transition:
+          border 0.2s,
+          box-shadow 0.2s;
+      }
+      .form-group input:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        background: white;
+      }
+      .btn {
+        padding: 12px 24px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+        font-size: 15px;
+      }
+      .btn:hover {
+        background: var(--primary-dark);
+      }
+      .btn-block {
+        width: 100%;
+        margin-top: 10px;
+      }
+      .error-text {
+        color: var(--danger);
+        font-size: 13px;
+        margin-top: 8px;
+        min-height: 20px;
+      }
+
+      /* ---------- 主应用 ---------- */
+      .app-container {
+        display: none;
+        width: 100vw;
+        height: 100vh;
+        flex-direction: row;
+        background: var(--bg);
+      }
+      .app-container.active {
+        display: flex;
+      }
+
+      /* 左侧导航 */
+      .nav-side {
+        width: 220px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        padding: 24px 12px;
+        box-shadow: var(--shadow);
+        z-index: 10;
+      }
+      .nav-brand {
+        text-align: center;
+        font-weight: 800;
+        font-size: 20px;
+        color: var(--primary);
+        margin-bottom: 30px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        margin: 4px 0;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text);
+        transition: all 0.2s;
+      }
+      .nav-item:hover {
+        background: var(--primary-light);
+      }
+      .nav-item.active {
+        background: var(--primary);
+        color: white;
+        box-shadow: 0 4px 8px rgba(79, 70, 229, 0.3);
+      }
+      .nav-divider {
+        height: 1px;
+        background: var(--border);
+        margin: 16px 0;
+      }
+      .nav-logout {
+        margin-top: auto;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-light);
+        padding: 10px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      .nav-logout:hover {
+        background: #fee2e2;
+        color: var(--danger);
+        border-color: var(--danger);
+      }
+
+      /* 右侧面板区 */
+      .content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 12px;
+        overflow: hidden;
+      }
+      .panel {
+        display: none;
+        flex: 1;
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        flex-direction: column;
+      }
+      .panel.active {
+        display: flex;
+      }
+
+      /* 聊天通用 */
+      .chat-layout {
+        flex-direction: row;
+      }
+      .contact-list {
+        width: 280px;
+        border-right: 1px solid var(--border);
+        background: #fafbfc;
+        display: flex;
+        flex-direction: column;
+      }
+      .list-header {
+        padding: 20px;
+        font-weight: 700;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .tag-box {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 10px;
+        gap: 6px;
+      }
+      .tag {
+        padding: 4px 12px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 13px;
+        background: white;
+        transition: 0.2s;
+      }
+      .tag.active {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+      .list-items {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      .contact-item {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        border-radius: 14px;
+        cursor: pointer;
+        margin-bottom: 4px;
+        transition: background 0.2s;
+      }
+      .contact-item:hover {
+        background: #eef2ff;
+      }
+      .contact-item.active {
+        background: var(--primary-light);
+        border: 1px solid var(--primary);
+      }
+      .avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        margin-right: 12px;
+        flex-shrink: 0;
+      }
+      .avatar.group {
+        background: linear-gradient(135deg, #10b981, #34d399);
+      }
+      .contact-name {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .contact-role {
+        font-size: 12px;
+        color: var(--text-light);
+      }
+
+      .chat-window {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: white;
+      }
+      .chat-header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+        background: #f8fafc;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .messages-box {
+        flex: 1;
+        padding: 20px 24px;
+        overflow-y: auto;
+        background: #f9fafb;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .bubble {
+        max-width: 70%;
+        padding: 10px 16px;
+        border-radius: 18px;
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+        position: relative;
+      }
+      .bubble.sent {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+        border-bottom-right-radius: 4px;
+      }
+      .bubble.received {
+        align-self: flex-start;
+        background: #e2e8f0;
+        color: var(--text);
+        border-bottom-left-radius: 4px;
+      }
+      .bubble .sender {
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--primary);
+      }
+      .bubble .time {
+        font-size: 10px;
+        opacity: 0.7;
+        margin-top: 6px;
+        text-align: right;
+      }
+      .bubble .status {
+        font-size: 10px;
+        margin-left: 4px;
+      }
+      .bubble.revoked {
+        font-style: italic;
+        opacity: 0.6;
+      }
+      .bubble img,
+      .bubble video {
+        max-width: 200px;
+        max-height: 180px;
+        border-radius: 12px;
+        margin-top: 4px;
+      }
+      .input-bar {
+        display: flex;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+        background: white;
+        align-items: center;
+        gap: 8px;
+      }
+      .input-bar input {
+        flex: 1;
+        padding: 10px 16px;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        font-size: 14px;
+        outline: none;
+      }
+      .input-bar input:focus {
+        border-color: var(--primary);
+      }
+      .icon-btn {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .icon-btn:hover {
+        background: #f1f5f9;
+      }
+      .send-btn {
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .call-btns {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .call-btns button {
+        border: 1px solid var(--border);
+        background: white;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .emoji-panel {
+        display: none;
+        position: absolute;
+        bottom: 80px;
+        left: 20px;
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        width: 320px;
+        max-height: 200px;
+        overflow-y: auto;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        grid-template-columns: repeat(8, 1fr);
+        gap: 6px;
+      }
+      .emoji-panel span {
+        font-size: 24px;
+        cursor: pointer;
+        text-align: center;
+      }
+
+      /* 公告 */
+      .announce-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .announce-list {
+        flex: 1;
+        padding: 20px 24px;
+        overflow-y: auto;
+      }
+      .ann-card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .ann-card h3 {
+        margin-bottom: 8px;
+      }
+      .ann-card .meta {
+        font-size: 13px;
+        color: var(--text-light);
+        margin-bottom: 12px;
+      }
+      .ann-card .actions {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-sm {
+        padding: 6px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: white;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .btn-sm.danger {
+        color: var(--danger);
+        border-color: var(--danger);
+      }
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 200;
+      }
+      .modal {
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+
+      /* 查询 */
+      .query-nav {
+        display: flex;
+        gap: 10px;
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .query-nav button.active {
+        background: var(--primary);
+        color: white;
+      }
+      .query-content {
+        flex: 1;
+        padding: 20px 24px;
+        overflow-y: auto;
+      }
+      .result-item {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 登录界面 -->
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-card">
+        <div class="login-logo">
+          <div class="icon">🎓</div>
+          <h1>校园通</h1>
+          <p style="color: var(--text-light); font-size: 14px">
+            即时通讯 · 信息查询
+          </p>
+        </div>
+        <div class="login-tabs">
+          <button id="tabLogin" class="active" onclick="switchAuthTab('login')">
+            登录
+          </button>
+          <button id="tabRegister" onclick="switchAuthTab('register')">
+            注册
+          </button>
+        </div>
+        <div id="loginForm" class="form-panel active">
+          <div class="form-group">
+            <label>学号/工号</label><input id="loginUid" placeholder="请输入" />
+          </div>
+          <div class="form-group">
+            <label>密码</label
+            ><input type="password" id="loginPwd" placeholder="请输入密码" />
+          </div>
+          <button class="btn btn-block" onclick="login()">登 录</button>
+          <div class="error-text" id="loginError"></div>
+        </div>
+        <div id="registerForm" class="form-panel">
+          <div class="form-group">
+            <label>学号/工号</label
+            ><input id="regUid" placeholder="例：202300001" />
+          </div>
+          <div class="form-group">
+            <label>姓名</label><input id="regName" placeholder="真实姓名" />
+          </div>
+          <div class="form-group">
+            <label>密码</label
+            ><input
+              type="password"
+              id="regPwd"
+              placeholder="至少8位含大小写字母和数字"
+            />
+          </div>
+          <div class="form-group">
+            <label>确认密码</label
+            ><input
+              type="password"
+              id="regConfirm"
+              placeholder="再次输入密码"
+            />
+          </div>
+          <button class="btn btn-block" onclick="register()">注 册</button>
+          <div class="error-text" id="regError"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主应用 -->
+    <div id="appContainer" class="app-container">
+      <div class="nav-side">
+        <div class="nav-brand">🎓 校园通</div>
+        <div
+          class="nav-item active"
+          data-panel="chat"
+          onclick="switchPanel('chat')"
+        >
+          💬 私聊
+        </div>
+        <div
+          class="nav-item"
+          data-panel="groups"
+          onclick="switchPanel('groups')"
+        >
+          👥 群聊
+        </div>
+        <div
+          class="nav-item"
+          data-panel="announce"
+          onclick="switchPanel('announce')"
+        >
+          📢 公告
+        </div>
+        <div class="nav-item" data-panel="query" onclick="switchPanel('query')">
+          🔍 查询
+        </div>
+        <div class="nav-divider"></div>
+        <button class="nav-logout" onclick="logout()">🚪 退出登录</button>
+      </div>
+
+      <div class="content-area">
+        <!-- 私聊面板 -->
+        <div id="panel-chat" class="panel chat-layout active">
+          <div class="contact-list">
+            <div class="list-header">联系人</div>
+            <div class="tag-box" id="privateTags"></div>
+            <div class="list-items" id="privateUserList"></div>
+          </div>
+          <div class="chat-window">
+            <div class="chat-header" id="privateHeader">
+              💬 选择联系人开始聊天
+            </div>
+            <div class="messages-box" id="privateMessages">
+              <div class="no-result">暂无消息</div>
+            </div>
+            <div class="emoji-panel" id="privateEmoji"></div>
+            <div class="input-bar">
+              <button class="icon-btn" onclick="togglePrivateEmoji()">
+                😊
+              </button>
+              <label class="icon-btn" style="cursor: pointer"
+                >📎<input
+                  type="file"
+                  id="privateFile"
+                  style="display: none"
+                  onchange="sendPrivateFile()"
+              /></label>
+              <input
+                id="privateInput"
+                placeholder="输入消息..."
+                disabled
+                onkeypress="if (event.key === 'Enter') sendPrivateText();"
+              />
+              <button class="send-btn" onclick="sendPrivateText()">➤</button>
+              <div class="call-btns">
+                <button onclick="simulateCall('audio')">📞</button>
+                <button onclick="simulateCall('video')">📹</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 群聊面板 -->
+        <div id="panel-groups" class="panel chat-layout">
+          <div class="contact-list">
+            <div class="list-header">
+              <span>我的群聊</span>
+              <button class="btn-sm" onclick="createGroupUI()">+ 新建</button>
+            </div>
+            <div class="tag-box" id="groupCats"></div>
+            <div class="list-items" id="groupList"></div>
+          </div>
+          <div class="chat-window">
+            <div class="chat-header" id="groupHeader">👥 选择一个群聊</div>
+            <div class="messages-box" id="groupMessages">
+              <div class="no-result">暂无消息</div>
+            </div>
+            <div class="input-bar">
+              <label class="icon-btn"
+                >📎<input
+                  type="file"
+                  id="groupFile"
+                  style="display: none"
+                  onchange="sendGroupFile()"
+              /></label>
+              <input
+                id="groupInput"
+                placeholder="输入群消息..."
+                disabled
+                onkeypress="if (event.key === 'Enter') sendGroupText();"
+              />
+              <button class="send-btn" onclick="sendGroupText()">➤</button>
+              <button
+                class="btn-sm danger"
+                id="leaveGroupBtn"
+                onclick="leaveGroup()"
+                disabled
+              >
+                退出群聊
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 公告面板 -->
+        <div id="panel-announce" class="panel">
+          <div class="announce-header">
+            <h2>📢 公告中心</h2>
+            <div style="display: flex; gap: 12px; align-items: center">
+              <select
+                id="announceUnitFilter"
+                onchange="loadAnnouncements()"
+                style="
+                  padding: 8px 12px;
+                  border-radius: 10px;
+                  border: 1px solid var(--border);
+                "
+              >
+                <option value="全部">全部单位</option>
+                <option value="计算机学院">计算机学院</option>
+                <option value="教务处">教务处</option>
+                <option value="数学学院">数学学院</option>
+              </select>
+              <button
+                class="btn"
+                id="createAnnounceBtn"
+                onclick="createAnnounceUI()"
+                style="display: none"
+              >
+                发布公告
+              </button>
+            </div>
+          </div>
+          <div class="announce-list" id="announceListContainer"></div>
+        </div>
+
+        <!-- 查询面板 -->
+        <div id="panel-query" class="panel">
+          <div class="query-nav" id="queryNav">
+            <button
+              class="btn-sm active"
+              data-q="userSearch"
+              onclick="switchQuery('userSearch')"
+            >
+              🔎 用户搜索
+            </button>
+            <button
+              class="btn-sm"
+              data-q="freeRoom"
+              onclick="switchQuery('freeRoom')"
+            >
+              🏫 空闲教室
+            </button>
+            <button
+              class="btn-sm"
+              data-q="events"
+              onclick="switchQuery('events')"
+            >
+              🎉 赛事活动
+            </button>
+            <button
+              class="btn-sm"
+              data-q="tutor"
+              onclick="switchQuery('tutor')"
+            >
+              👩‍🏫 辅导值班
+            </button>
+            <button
+              class="btn-sm"
+              data-q="office"
+              onclick="switchQuery('office')"
+            >
+              📍 办公室位置
+            </button>
+            <button
+              class="btn-sm"
+              data-q="course"
+              onclick="switchQuery('course')"
+            >
+              📅 课程安排
+            </button>
+          </div>
+          <div class="query-content" id="queryContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modalContainer"></div>
+
+    <script>
+      const API = "/api";
+      let currentUser = null;
+      let privatePeer = null,
+        privatePolling = null;
+      let selectedGroupId = null,
+        groupPolling = null;
+      let privateFilter = "all",
+        groupFilter = "all";
+
+      // ========== 工具 ==========
+      function escapeHtml(t) {
+        const d = document.createElement("div");
+        d.textContent = t;
+        return d.innerHTML;
+      }
+      async function apiReq(url, options = {}) {
+        const token = localStorage.getItem("token");
+        const headers = { ...options.headers };
+        if (token) headers["Authorization"] = token;
+        if (!(options.body instanceof FormData))
+          headers["Content-Type"] = "application/json";
+        const res = await fetch(url, { ...options, headers });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "请求失败");
+        return data;
+      }
+
+      // ========== 登录/注册 ==========
+      function switchAuthTab(tab) {
+        document
+          .getElementById("tabLogin")
+          .classList.toggle("active", tab === "login");
+        document
+          .getElementById("tabRegister")
+          .classList.toggle("active", tab === "register");
+        document
+          .getElementById("loginForm")
+          .classList.toggle("active", tab === "login");
+        document
+          .getElementById("registerForm")
+          .classList.toggle("active", tab === "register");
+      }
+      async function register() {
+        const uid = document.getElementById("regUid").value.trim();
+        const name = document.getElementById("regName").value.trim();
+        const password = document.getElementById("regPwd").value.trim();
+        const confirm = document.getElementById("regConfirm").value.trim();
+        try {
+          await apiReq(`${API}/register`, {
+            method: "POST",
+            body: JSON.stringify({ uid, name, password, confirm }),
+          });
+          alert("注册成功！请登录");
+          switchAuthTab("login");
+        } catch (e) {
+          document.getElementById("regError").innerText = e.message;
+        }
+      }
+      async function login() {
+        const uid = document.getElementById("loginUid").value.trim();
+        const password = document.getElementById("loginPwd").value.trim();
+        try {
+          const data = await apiReq(`${API}/login`, {
+            method: "POST",
+            body: JSON.stringify({ uid, password }),
+          });
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("name", data.name);
+          localStorage.setItem("role", data.role);
+          localStorage.setItem("uid", uid);
+          currentUser = { uid, name: data.name, role: data.role };
+          document.getElementById("loginOverlay").style.display = "none";
+          document.getElementById("appContainer").classList.add("active");
+          loadPrivateUsers();
+          if (currentUser.role !== "student")
+            document.getElementById("createAnnounceBtn").style.display =
+              "inline-block";
+        } catch (e) {
+          document.getElementById("loginError").innerText = e.message;
+        }
+      }
+      async function logout() {
+        try {
+          await apiReq(`${API}/logout`, { method: "POST" });
+        } catch {}
+        localStorage.clear();
+        location.reload();
+      }
+
+      // ========== 面板切换 ==========
+      function switchPanel(name) {
+        document
+          .querySelectorAll(".nav-item")
+          .forEach((el) => el.classList.remove("active"));
+        document
+          .querySelector(`[data-panel="${name}"]`)
+          .classList.add("active");
+        document
+          .querySelectorAll(".panel")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById(`panel-${name}`).classList.add("active");
+        if (name === "chat") loadPrivateUsers();
+        if (name === "groups") loadGroups();
+        if (name === "announce") loadAnnouncements();
+        if (name === "query") switchQuery("userSearch");
+      }
+
+      // ========== 私聊 ==========
+      async function loadPrivateUsers() {
+        const users = await apiReq(`${API}/users`);
+        const container = document.getElementById("privateUserList");
+        const tags = ["all", "student", "teacher"];
+        document.getElementById("privateTags").innerHTML = tags
+          .map(
+            (t) =>
+              `<span class="tag ${privateFilter === t ? "active" : ""}" onclick="privateFilter='${t}';loadPrivateUsers()">${t === "all" ? "全部" : t === "student" ? "学生" : "教师"}</span>`,
+          )
+          .join("");
+        const filtered =
+          privateFilter === "all"
+            ? users
+            : users.filter((u) => u.role === privateFilter);
+        container.innerHTML = filtered
+          .map(
+            (u) => `
+        <div class="contact-item" data-uid="${u.uid}" onclick="selectPrivate('${u.uid}','${escapeHtml(u.name)}')">
+          <div class="avatar">${u.name[0]}</div>
+          <div><div class="contact-name">${escapeHtml(u.name)}</div><div class="contact-role">${u.role === "student" ? "学生" : "教师"}</div></div>
+        </div>
+      `,
+          )
+          .join("");
+      }
+      function selectPrivate(uid, name) {
+        document
+          .querySelectorAll("#privateUserList .contact-item")
+          .forEach((el) => el.classList.remove("active"));
+        document.querySelector(`[data-uid="${uid}"]`).classList.add("active");
+        privatePeer = uid;
+        document.getElementById("privateHeader").innerHTML =
+          `💬 与 ${escapeHtml(name)} 聊天中`;
+        document.getElementById("privateInput").disabled = false;
+        loadPrivateMessages();
+        if (privatePolling) clearInterval(privatePolling);
+        privatePolling = setInterval(loadPrivateMessages, 2000);
+      }
+      async function loadPrivateMessages() {
+        if (!privatePeer) return;
+        const msgs = await apiReq(`${API}/messages?with=${privatePeer}`);
+        const container = document.getElementById("privateMessages");
+        container.innerHTML = msgs
+          .map((m) => {
+            const isMe = m.sender === currentUser.uid;
+            const cls = isMe ? "sent" : "received";
+            let content = "";
+            if (m.revoked) content = '<div class="revoked">消息已被撤回</div>';
+            else if (m.msg_type === "image")
+              content = `<img src="${m.file_path}">`;
+            else if (m.msg_type === "video")
+              content = `<video controls src="${m.file_path}"></video>`;
+            else if (m.msg_type === "file")
+              content = `<a href="${m.file_path}" download="${m.file_name}">📎 ${m.file_name}</a>`;
+            else content = escapeHtml(m.content);
+            const time = new Date(m.timestamp * 1000).toLocaleTimeString(
+              "zh-CN",
+              { hour: "2-digit", minute: "2-digit" },
+            );
+            const statusIcon = isMe ? (m.status === "read" ? "✓✓" : "✓") : "";
+            const revokeBtn =
+              isMe && !m.revoked && Date.now() / 1000 - m.timestamp < 120
+                ? `<button onclick="revokePrivate(${m.id})" style="font-size:10px;">撤回</button>`
+                : "";
+            return `<div class="bubble ${cls}"><div>${content}</div><div class="time">${time} ${statusIcon} ${revokeBtn}</div></div>`;
+          })
+          .join("");
+        container.scrollTop = container.scrollHeight;
+      }
+      async function sendPrivateText() {
+        const input = document.getElementById("privateInput");
+        const text = input.value.trim();
+        if (!text || !privatePeer) return;
+        await apiReq(`${API}/send`, {
+          method: "POST",
+          body: JSON.stringify({ receiver: privatePeer, content: text }),
+        });
+        input.value = "";
+        loadPrivateMessages();
+      }
+      async function sendPrivateFile() {
+        const file = document.getElementById("privateFile").files[0];
+        if (!file || !privatePeer) return;
+        const form = new FormData();
+        form.append("receiver", privatePeer);
+        form.append("file", file);
+        form.append(
+          "msg_type",
+          file.type.startsWith("image/")
+            ? "image"
+            : file.type.startsWith("video/")
+              ? "video"
+              : "file",
+        );
+        await apiReq(`${API}/send`, { method: "POST", body: form });
+        loadPrivateMessages();
+      }
+      async function revokePrivate(id) {
+        await apiReq(`${API}/messages/revoke/${id}`, { method: "POST" });
+        loadPrivateMessages();
+      }
+      function togglePrivateEmoji() {
+        const panel = document.getElementById("privateEmoji");
+        if (panel.style.display === "grid") {
+          panel.style.display = "none";
+          return;
+        }
+        const emojis = "😀😁😂🤣😃😄😅😆😉😊😋😎😍😘🥰😗😙😚🤗🤩".split("");
+        panel.innerHTML = emojis
+          .map(
+            (e) =>
+              `<span onclick="document.getElementById('privateInput').value+='${e}'">${e}</span>`,
+          )
+          .join("");
+        panel.style.display = "grid";
+      }
+      function simulateCall(type) {
+        alert(
+          `模拟${type === "audio" ? "语音" : "视频"}通话：呼叫中... (演示模式)`,
+        );
+      }
+
+      // ========== 群聊 ==========
+      async function loadGroups() {
+        const groups = await apiReq(`${API}/groups`);
+        const cats = [
+          "all",
+          "课程群",
+          "比赛群",
+          "班级群",
+          "年级群",
+          "学院群",
+          "办公群",
+        ];
+        document.getElementById("groupCats").innerHTML = cats
+          .map(
+            (c) =>
+              `<span class="tag ${groupFilter === c ? "active" : ""}" onclick="groupFilter='${c}';loadGroups()">${c === "all" ? "全部" : c}</span>`,
+          )
+          .join("");
+        const filtered =
+          groupFilter === "all"
+            ? groups
+            : groups.filter((g) => g.category === groupFilter);
+        document.getElementById("groupList").innerHTML = filtered
+          .map(
+            (g) => `
+        <div class="contact-item" data-gid="${g.group_id}" onclick="selectGroup('${g.group_id}','${escapeHtml(g.name)}')">
+          <div class="avatar group">👥</div>
+          <div><div class="contact-name">${escapeHtml(g.name)}</div><div class="contact-role">${g.category}</div></div>
+        </div>
+      `,
+          )
+          .join("");
+      }
+      function selectGroup(id, name) {
+        document
+          .querySelectorAll("#groupList .contact-item")
+          .forEach((el) => el.classList.remove("active"));
+        document.querySelector(`[data-gid="${id}"]`).classList.add("active");
+        selectedGroupId = id;
+        document.getElementById("groupHeader").innerHTML =
+          `👥 ${escapeHtml(name)}`;
+        document.getElementById("groupInput").disabled = false;
+        document.getElementById("leaveGroupBtn").disabled = false;
+        loadGroupMessages();
+        if (groupPolling) clearInterval(groupPolling);
+        groupPolling = setInterval(loadGroupMessages, 2000);
+      }
+      async function loadGroupMessages() {
+        if (!selectedGroupId) return;
+        const msgs = await apiReq(`${API}/groups/${selectedGroupId}/messages`);
+        const container = document.getElementById("groupMessages");
+        container.innerHTML = msgs
+          .map((m) => {
+            const isMe = m.sender === currentUser.uid;
+            const cls = isMe ? "sent" : "received";
+            let content = "";
+            if (m.revoked) content = '<div class="revoked">已撤回</div>';
+            else if (m.msg_type === "image")
+              content = `<img src="${m.file_path}">`;
+            else content = escapeHtml(m.content);
+            const time = new Date(m.timestamp * 1000).toLocaleTimeString(
+              "zh-CN",
+              { hour: "2-digit", minute: "2-digit" },
+            );
+            return `<div class="bubble ${cls}">
+          ${!isMe ? `<div class="sender">${m.sender}</div>` : ""}
+          <div>${content}</div><div class="time">${time}</div>
+        </div>`;
+          })
+          .join("");
+        container.scrollTop = container.scrollHeight;
+      }
+      async function sendGroupText() {
+        const input = document.getElementById("groupInput");
+        const text = input.value.trim();
+        if (!text || !selectedGroupId) return;
+        await apiReq(`${API}/groups/${selectedGroupId}/send`, {
+          method: "POST",
+          body: JSON.stringify({ content: text }),
+        });
+        input.value = "";
+        loadGroupMessages();
+      }
+      async function sendGroupFile() {
+        const file = document.getElementById("groupFile").files[0];
+        if (!file || !selectedGroupId) return;
+        const form = new FormData();
+        form.append("file", file);
+        form.append("msg_type", "file");
+        await apiReq(`${API}/groups/${selectedGroupId}/send`, {
+          method: "POST",
+          body: form,
+        });
+        loadGroupMessages();
+      }
+      async function leaveGroup() {
+        if (!selectedGroupId || !confirm("确定退出群聊吗？")) return;
+        await apiReq(`${API}/groups/${selectedGroupId}/leave`, {
+          method: "POST",
+        });
+        selectedGroupId = null;
+        loadGroups();
+        document.getElementById("groupHeader").innerHTML = "👥 选择一个群聊";
+        document.getElementById("groupInput").disabled = true;
+        document.getElementById("leaveGroupBtn").disabled = true;
+      }
+      function createGroupUI() {
+        const name = prompt("群聊名称:");
+        if (!name) return;
+        const members = prompt("成员学工号(逗号分隔):");
+        if (!members) return;
+        const category = prompt(
+          "分类(课程群/比赛群/班级群/年级群/学院群/办公群):",
+          "办公群",
+        );
+        apiReq(`${API}/groups`, {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            members: members
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            category,
+          }),
+        }).then(() => {
+          alert("创建成功");
+          loadGroups();
+        });
+      }
+
+      // ========== 公告 ==========
+      async function loadAnnouncements() {
+        const unit = document.getElementById("announceUnitFilter").value;
+        const anns = await apiReq(
+          `${API}/announcements?unit=${encodeURIComponent(unit)}`,
+        );
+        const container = document.getElementById("announceListContainer");
+        container.innerHTML = anns
+          .map((a) => {
+            const date = new Date(a.created_at * 1000).toLocaleString("zh-CN");
+            const canModify =
+              currentUser.role === "manager" || a.publisher === currentUser.uid;
+            return `<div class="ann-card"><h3>${escapeHtml(a.title)}</h3><div class="meta">🏛️ ${a.unit} · 📅 ${date}</div>
+          <div style="white-space:pre-wrap; margin-bottom:12px;">${escapeHtml(a.content.substring(0, 200))}${a.content.length > 200 ? "..." : ""}</div>
+          <div class="actions"><button class="btn-sm" onclick="viewAnnounce(${a.id})">查看详情</button>
+          ${canModify ? `<button class="btn-sm" onclick="editAnnounce(${a.id})">修改</button><button class="btn-sm danger" onclick="deleteAnnounce(${a.id})">删除</button>` : ""}
+          </div></div>`;
+          })
+          .join("");
+      }
+      function viewAnnounce(id) {
+        /* 简单alert详情，可扩展 */ alert("详情查看演示");
+      }
+      function createAnnounceUI() {
+        const title = prompt("标题:");
+        if (!title) return;
+        const content = prompt("正文:");
+        if (!content) return;
+        const unit =
+          currentUser.role === "teacher"
+            ? "计算机学院"
+            : prompt("发布单位:", "教务处");
+        apiReq(`${API}/announcements`, {
+          method: "POST",
+          body: JSON.stringify({ title, content, unit }),
+        }).then(() => {
+          alert("发布成功");
+          loadAnnouncements();
+        });
+      }
+      async function editAnnounce(id) {
+        const anns = await apiReq(`${API}/announcements`);
+        const ann = anns.find((a) => a.id === id);
+        if (!ann) return;
+        const title = prompt("新标题", ann.title);
+        if (!title) return;
+        const content = prompt("新正文", ann.content);
+        if (!content) return;
+        await apiReq(`${API}/announcements/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ title, content }),
+        });
+        alert("修改成功");
+        loadAnnouncements();
+      }
+      async function deleteAnnounce(id) {
+        if (!confirm("确定删除？")) return;
+        await apiReq(`${API}/announcements/${id}`, { method: "DELETE" });
+        alert("已删除");
+        loadAnnouncements();
+      }
+
+      // ========== 校园查询 ==========
+      function switchQuery(type) {
+        document
+          .querySelectorAll("#queryNav button")
+          .forEach((b) => b.classList.remove("active"));
+        document.querySelector(`[data-q="${type}"]`).classList.add("active");
+        const div = document.getElementById("queryContent");
+        switch (type) {
+          case "userSearch":
+            div.innerHTML = `<div class="query-form"><input id="kw" placeholder="学号/姓名"><button class="btn" onclick="searchUsers()">搜索</button></div><div id="res"></div>`;
+            break;
+          case "freeRoom":
+            div.innerHTML = `<div class="query-form"><input type="date" id="rdate"><input type="time" id="rstart" value="08:00"><input type="time" id="rend" value="10:00"><button class="btn" onclick="freeRooms()">查询</button></div><div id="res"></div>`;
+            break;
+          case "events":
+            div.innerHTML = `<div id="res"></div>`;
+            loadEvents();
+            break;
+          case "tutor":
+            div.innerHTML = `<div class="query-form"><input type="date" id="tdate"><input id="tcollege" placeholder="学院"><button class="btn" onclick="tutorDuty()">查询</button></div><div id="res"></div>`;
+            break;
+          case "office":
+            div.innerHTML = `<div class="query-form"><input id="ocollege" placeholder="学院"><button class="btn" onclick="teacherOffice()">查询</button></div><div id="res"></div>`;
+            break;
+          case "course":
+            div.innerHTML = `<div class="query-form"><input id="croom" placeholder="教室编号"><button class="btn" onclick="loadCourses()">查询</button></div><div id="res"></div>`;
+            loadCourses();
+            break;
+        }
+      }
+      async function searchUsers() {
+        const kw = document.getElementById("kw").value.trim();
+        if (!kw) return;
+        const users = await apiReq(
+          `${API}/search/users?q=${encodeURIComponent(kw)}`,
+        );
+        document.getElementById("res").innerHTML = users
+          .map(
+            (u) =>
+              `<div class="result-item"><h4>${u.name} (${u.uid})</h4><div class="info">角色：${u.role}</div></div>`,
+          )
+          .join("");
+      }
+      async function freeRooms() {
+        const date = document.getElementById("rdate").value,
+          start = document.getElementById("rstart").value,
+          end = document.getElementById("rend").value;
+        const rooms = await apiReq(
+          `${API}/classrooms/free?date=${date}&start=${start}&end=${end}`,
+        );
+        document.getElementById("res").innerHTML = rooms
+          .map(
+            (r) =>
+              `<div class="result-item"><h4>${r.id} - ${r.building} ${r.floor}层</h4><div class="info">座位：${r.seats} · 多媒体：${r.media}</div></div>`,
+          )
+          .join("");
+      }
+      async function loadEvents() {
+        const events = await apiReq(`${API}/events`);
+        document.getElementById("res").innerHTML = events
+          .map(
+            (e) =>
+              `<div class="result-item"><h4>${e.name} (${e.type})</h4><div class="info">🕒 ${e.start_time} ~ ${e.end_time} · 📍 ${e.location}</div></div>`,
+          )
+          .join("");
+      }
+      async function tutorDuty() {
+        const date = document.getElementById("tdate").value,
+          college = document.getElementById("tcollege").value.trim();
+        const duties = await apiReq(
+          `${API}/tutor_duty?date=${date}&college=${encodeURIComponent(college)}`,
+        );
+        document.getElementById("res").innerHTML = duties
+          .map(
+            (d) =>
+              `<div class="result-item"><h4>${d.teacher_name}</h4><div class="info">🏫 ${d.college} · ${d.start_time}-${d.end_time}</div></div>`,
+          )
+          .join("");
+      }
+      async function teacherOffice() {
+        const college = document.getElementById("ocollege").value.trim();
+        const offices = await apiReq(
+          `${API}/teacher_office?college=${encodeURIComponent(college)}`,
+        );
+        document.getElementById("res").innerHTML = offices
+          .map(
+            (o) =>
+              `<div class="result-item"><h4>${o.name} (${o.uid})</h4><div class="info">${o.title} · ${o.college} · 📍 ${o.office}</div></div>`,
+          )
+          .join("");
+      }
+      async function loadCourses() {
+        const room = document.getElementById("croom")?.value.trim() || "";
+        const courses = await apiReq(
+          `${API}/course_schedule?classroom=${encodeURIComponent(room)}`,
+        );
+        document.getElementById("res").innerHTML = courses
+          .map(
+            (c) =>
+              `<div class="result-item"><h4>${c.course_name}</h4><div class="info">👨‍🏫 ${c.teacher} · ${c.start_time}-${c.end_time} (周${c.day_of_week})</div></div>`,
+          )
+          .join("");
+      }
+
+      // 初始化
+      window.onload = () => {
+        const token = localStorage.getItem("token");
+        if (token) {
+          apiReq(`${API}/userinfo`)
+            .then((data) => {
+              currentUser = {
+                uid: localStorage.getItem("uid"),
+                name: data.name,
+                role: data.role,
+              };
+              document.getElementById("loginOverlay").style.display = "none";
+              document.getElementById("appContainer").classList.add("active");
+              loadPrivateUsers();
+              if (currentUser.role !== "student")
+                document.getElementById("createAnnounceBtn").style.display =
+                  "inline-block";
+            })
+            .catch(() => {
+              localStorage.clear();
+            });
+        }
+      };
+    </script>
+  </body>
+</html>

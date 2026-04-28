@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>群聊 - 校园通</title>
+    <style>
+      :root {
+        --primary: #4f46e5;
+        --bg: #f1f5f9;
+        --card: #fff;
+        --border: #e2e8f0;
+        --danger: #ef4444;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        display: flex;
+        height: 100vh;
+        background: var(--bg);
+      }
+      .sidebar {
+        width: 280px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar-header {
+        padding: 20px;
+        font-weight: 700;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .sidebar-header button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .group-cats {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 10px;
+        gap: 6px;
+      }
+      .cat-tag {
+        padding: 4px 12px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 13px;
+        background: white;
+      }
+      .cat-tag.active {
+        background: var(--primary);
+        color: white;
+      }
+      .group-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      .group-item {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        border-radius: 14px;
+        cursor: pointer;
+        margin-bottom: 4px;
+        transition: 0.2s;
+      }
+      .group-item:hover {
+        background: #eef2ff;
+      }
+      .group-item.active {
+        background: #e0e7ff;
+        border: 1px solid var(--primary);
+      }
+      .avatar-group {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #10b981, #34d399);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        margin-right: 12px;
+      }
+      .chat-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--card);
+        margin: 10px;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+      .chat-header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+      }
+      .messages {
+        flex: 1;
+        padding: 20px 24px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: #f9fafb;
+      }
+      .bubble {
+        max-width: 70%;
+        padding: 10px 16px;
+        border-radius: 18px;
+        font-size: 14px;
+        line-height: 1.5;
+        position: relative;
+      }
+      .bubble.sent {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+        border-bottom-right-radius: 4px;
+      }
+      .bubble.received {
+        align-self: flex-start;
+        background: #e2e8f0;
+        color: #1e293b;
+        border-bottom-left-radius: 4px;
+      }
+      .sender-name {
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--primary);
+        font-size: 13px;
+      }
+      .bubble .time {
+        font-size: 10px;
+        opacity: 0.7;
+        margin-top: 4px;
+        text-align: right;
+      }
+      .input-bar {
+        display: flex;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+        background: white;
+        align-items: center;
+        gap: 8px;
+      }
+      .input-bar input {
+        flex: 1;
+        padding: 10px 16px;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        font-size: 14px;
+        outline: none;
+      }
+      .send-btn {
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .leave-btn {
+        background: white;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 6px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-left: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span>我的群聊</span>
+        <button onclick="createGroupUI()">+ 新建</button>
+      </div>
+      <div class="group-cats" id="catTags"></div>
+      <div class="group-list" id="groupList"></div>
+    </div>
+    <div class="chat-area">
+      <div class="chat-header" id="chatHeader">👥 选择一个群聊</div>
+      <div class="messages" id="msgContainer">
+        <div style="text-align: center; color: #64748b; padding: 40px">
+          暂无消息
+        </div>
+      </div>
+      <div class="input-bar">
+        <input
+          id="textInput"
+          placeholder="输入群消息..."
+          disabled
+          onkeypress="if (event.key === 'Enter') sendText();"
+        />
+        <button class="send-btn" onclick="sendText()">➤</button>
+        <button class="leave-btn" id="leaveBtn" onclick="leaveGroup()" disabled>
+          退出群聊
+        </button>
+      </div>
+    </div>
+    <script>
+      let token = localStorage.getItem("token"),
+        currentUid = localStorage.getItem("uid"),
+        selectedGroup = null,
+        polling,
+        filterCat = "all";
+      async function api(url, opt = {}) {
+        const headers = { ...opt.headers };
+        if (token) headers["Authorization"] = token;
+        if (!(opt.body instanceof FormData))
+          headers["Content-Type"] = "application/json";
+        const res = await fetch(url, { ...opt, headers });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "请求失败");
+        return data;
+      }
+      function loadGroups() {
+        api("/api/groups").then((groups) => {
+          const cats = [
+            "all",
+            "课程群",
+            "比赛群",
+            "班级群",
+            "年级群",
+            "学院群",
+            "办公群",
+          ];
+          document.getElementById("catTags").innerHTML = cats
+            .map(
+              (c) =>
+                `<span class="cat-tag ${filterCat === c ? "active" : ""}" onclick="filterCat='${c}';loadGroups()">${c === "all" ? "全部" : c}</span>`,
+            )
+            .join("");
+          const filtered =
+            filterCat === "all"
+              ? groups
+              : groups.filter((g) => g.category === filterCat);
+          document.getElementById("groupList").innerHTML = filtered
+            .map(
+              (g) =>
+                `<div class="group-item" data-gid="${g.group_id}" onclick="selectGroup('${g.group_id}','${escapeHtml(g.name)}')"><div class="avatar-group">👥</div><div style="flex:1"><div style="font-weight:600">${escapeHtml(g.name)}</div><div style="font-size:12px;color:#64748b">${g.category}</div></div></div>`,
+            )
+            .join("");
+        });
+      }
+      function selectGroup(id, name) {
+        document
+          .querySelectorAll(".group-item")
+          .forEach((el) => el.classList.remove("active"));
+        document.querySelector(`[data-gid="${id}"]`).classList.add("active");
+        selectedGroup = id;
+        document.getElementById("chatHeader").innerHTML =
+          `👥 ${escapeHtml(name)}`;
+        document.getElementById("textInput").disabled = false;
+        document.getElementById("leaveBtn").disabled = false;
+        loadMessages();
+        if (polling) clearInterval(polling);
+        polling = setInterval(loadMessages, 2000);
+      }
+      function loadMessages() {
+        if (!selectedGroup) return;
+        api(`/api/groups/${selectedGroup}/messages`).then((msgs) => {
+          const container = document.getElementById("msgContainer");
+          container.innerHTML = msgs
+            .map((m) => {
+              const isMe = m.sender === currentUid,
+                cls = isMe ? "sent" : "received";
+              let content = "";
+              if (m.revoked) {
+                content =
+                  '<div style="font-style:italic;opacity:.6">已撤回</div>';
+              } else if (m.msg_type === "image") {
+                content = `<img src="${m.file_path}" style="max-width:200px;max-height:180px;border-radius:12px;">`;
+              } else if (m.msg_type === "file") {
+                content = `<a href="${m.file_path}" download="${m.file_name}">📎 ${m.file_name}</a>`;
+              } else {
+                content = escapeHtml(m.content);
+              }
+              const time = new Date(m.timestamp * 1000).toLocaleTimeString(
+                "zh-CN",
+                { hour: "2-digit", minute: "2-digit" },
+              );
+              return `<div class="bubble ${cls}">${!isMe ? `<div class="sender-name">${m.sender}</div>` : ""}<div>${content}</div><div class="time">${time}</div></div>`;
+            })
+            .join("");
+          container.scrollTop = container.scrollHeight;
+        });
+      }
+      function sendText() {
+        const input = document.getElementById("textInput");
+        const text = input.value.trim();
+        if (!text || !selectedGroup) return;
+        api(`/api/groups/${selectedGroup}/send`, {
+          method: "POST",
+          body: JSON.stringify({ content: text }),
+        }).then(() => {
+          input.value = "";
+          loadMessages();
+        });
+      }
+      function createGroupUI() {
+        const name = prompt("群聊名称:");
+        if (!name) return;
+        const membersStr = prompt("成员学工号(逗号分隔):");
+        if (!membersStr) return;
+        const members = membersStr
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const category = prompt(
+          "分类(课程群/比赛群/班级群/年级群/学院群/办公群):",
+          "办公群",
+        );
+        api("/api/groups", {
+          method: "POST",
+          body: JSON.stringify({ name, members, category }),
+        }).then((d) => {
+          alert(d.message);
+          loadGroups();
+        });
+      }
+      async function leaveGroup() {
+        if (!selectedGroup) return;
+        if (!confirm("确定退出？")) return;
+        api(`/api/groups/${selectedGroup}/leave`, { method: "POST" }).then(
+          (d) => {
+            alert(d.message);
+            selectedGroup = null;
+            loadGroups();
+            document.getElementById("chatHeader").innerHTML = "👥 选择一个群聊";
+            document.getElementById("textInput").disabled = true;
+            document.getElementById("leaveBtn").disabled = true;
+          },
+        );
+      }
+      function escapeHtml(t) {
+        const d = document.createElement("div");
+        d.textContent = t;
+        return d.innerHTML;
+      }
+      window.onload = function () {
+        if (!localStorage.getItem("token")) {
+          location.href = "/";
+          return;
+        }
+        loadGroups();
+      };
+    </script>
+  </body>
+</html>

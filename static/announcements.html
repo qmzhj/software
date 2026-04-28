@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>公告 - 校园通</title>
+    <style>
+      :root {
+        --primary: #4f46e5;
+        --bg: #f1f5f9;
+        --card: #fff;
+        --border: #e2e8f0;
+        --danger: #ef4444;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .header {
+        padding: 20px 30px;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .header h2 {
+        font-size: 20px;
+      }
+      .filter {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .filter select {
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      .btn {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 30px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .card h3 {
+        margin-bottom: 8px;
+      }
+      .card .meta {
+        color: #64748b;
+        font-size: 13px;
+        margin-bottom: 12px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-sm {
+        padding: 6px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: white;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .btn-sm.danger {
+        color: var(--danger);
+        border-color: var(--danger);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h2>📢 公告中心</h2>
+      <div class="filter">
+        <select id="unitFilter" onchange="loadAnnouncements()">
+          <option value="全部">全部单位</option>
+          <option value="计算机学院">计算机学院</option>
+          <option value="教务处">教务处</option>
+          <option value="数学学院">数学学院</option>
+        </select>
+        <button
+          class="btn"
+          id="createBtn"
+          onclick="createAnnounceUI()"
+          style="display: none"
+        >
+          发布公告
+        </button>
+      </div>
+    </div>
+    <div class="content" id="annList"></div>
+    <script>
+      let token = localStorage.getItem("token"),
+        currentRole = localStorage.getItem("role"),
+        currentUid = localStorage.getItem("uid");
+      async function api(url, opt = {}) {
+        const headers = { ...opt.headers };
+        if (token) headers["Authorization"] = token;
+        if (!(opt.body instanceof FormData))
+          headers["Content-Type"] = "application/json";
+        const res = await fetch(url, { ...opt, headers });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        return data;
+      }
+      function loadAnnouncements() {
+        const unit = document.getElementById("unitFilter").value;
+        api(`/api/announcements?unit=${encodeURIComponent(unit)}`).then(
+          (anns) => {
+            document.getElementById("annList").innerHTML = anns
+              .map((a) => {
+                const date = new Date(a.created_at * 1000).toLocaleString(
+                  "zh-CN",
+                );
+                const canModify =
+                  currentRole === "manager" || a.publisher === currentUid;
+                return `<div class="card"><h3>${escapeHtml(a.title)}</h3><div class="meta">🏛️ ${a.unit} · 📅 ${date}</div><div style="white-space:pre-wrap;margin-bottom:12px;">${escapeHtml(a.content.substring(0, 200))}${a.content.length > 200 ? "..." : ""}</div><div class="actions"><button class="btn-sm" onclick="viewDetail(${a.id})">查看详情</button>${canModify ? `<button class="btn-sm" onclick="editAnnounce(${a.id})">修改</button><button class="btn-sm danger" onclick="deleteAnnounce(${a.id})">删除</button>` : ""}</div></div>`;
+              })
+              .join("");
+          },
+        );
+      }
+      function createAnnounceUI() {
+        const title = prompt("标题:");
+        if (!title) return;
+        const content = prompt("正文:");
+        if (!content) return;
+        const unit =
+          currentRole === "teacher"
+            ? "计算机学院"
+            : prompt("发布单位(计算机学院/教务处/数学学院):", "教务处");
+        api("/api/announcements", {
+          method: "POST",
+          body: JSON.stringify({ title, content, unit }),
+        }).then(() => {
+          alert("发布成功");
+          loadAnnouncements();
+        });
+      }
+      function viewDetail(id) {
+        alert("详情查看（演示）");
+      }
+      async function editAnnounce(id) {
+        const anns = await api("/api/announcements");
+        const ann = anns.find((a) => a.id === id);
+        if (!ann) return;
+        const title = prompt("新标题", ann.title);
+        if (!title) return;
+        const content = prompt("新正文", ann.content);
+        if (!content) return;
+        await api(`/api/announcements/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ title, content }),
+        });
+        alert("修改成功");
+        loadAnnouncements();
+      }
+      async function deleteAnnounce(id) {
+        if (!confirm("确定删除？")) return;
+        await api(`/api/announcements/${id}`, { method: "DELETE" });
+        alert("已删除");
+        loadAnnouncements();
+      }
+      function escapeHtml(t) {
+        const d = document.createElement("div");
+        d.textContent = t;
+        return d.innerHTML;
+      }
+      window.onload = function () {
+        if (!localStorage.getItem("token")) {
+          location.href = "/";
+          return;
+        }
+        if (currentRole !== "student")
+          document.getElementById("createBtn").style.display = "block";
+        loadAnnouncements();
+      };
+    </script>
+  </body>
+</html>
