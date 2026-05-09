@@ -9,6 +9,8 @@
         --bg: #f1f5f9;
         --card: #fff;
         --border: #e2e8f0;
+        --disabled: #e2e8f0;
+        --disabled-text: #64748b;
       }
       * {
         margin: 0;
@@ -24,7 +26,7 @@
         height: 100vh;
       }
       .card {
-        width: 420px;
+        width: 450px;
         background: var(--card);
         border-radius: 20px;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
@@ -43,6 +45,7 @@
         font-weight: 600;
         margin-bottom: 6px;
         font-size: 13px;
+        color: #475569;
       }
       .form-group input {
         width: 100%;
@@ -52,10 +55,16 @@
         font-size: 14px;
         outline: none;
         background: #f8fafc;
+        transition: all 0.3s ease;
       }
       .form-group input:focus {
         border-color: var(--primary);
         box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+      }
+      .form-group input:disabled {
+        background: var(--disabled);
+        color: var(--disabled-text);
+        cursor: not-allowed;
       }
       .btn {
         width: 100%;
@@ -68,11 +77,23 @@
         font-weight: 600;
         cursor: pointer;
         margin-top: 10px;
+        transition: background 0.3s ease;
+      }
+      .btn:hover {
+        background: #4338ca;
       }
       .error {
         color: #ef4444;
         font-size: 13px;
         margin-top: 6px;
+        min-height: 20px;
+      }
+      .success {
+        color: #10b981;
+        font-size: 13px;
+        margin-top: 6px;
+        min-height: 20px;
+        text-align: center;
       }
       .role-info {
         background: #f1f5f9;
@@ -80,64 +101,220 @@
         border-radius: 8px;
         font-size: 14px;
         margin-bottom: 20px;
+        color: #475569;
+      }
+      .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 25px 0 15px 0;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--primary);
+      }
+      .password-hint {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 4px;
       }
     </style>
   </head>
   <body>
     <div class="card">
       <h2>👤 个人设置</h2>
-      <div class="role-info">
-        当前角色：<strong id="roleDisplay"></strong>（学号/工号：<span
-          id="uidDisplay"
-        ></span
-        >）
+      
+      <!-- 个人信息展示区域 -->
+      <div class="section-title">基本信息</div>
+
+      
+      <!-- 不可修改的信息 -->
+
+      
+      <div class="form-group">
+        <label>角色</label>
+        <input id="roleInput" disabled placeholder="加载中..." />
       </div>
       <div class="form-group">
-        <label>姓名</label><input id="nameInput" placeholder="修改姓名" />
+        <label>姓名</label>
+        <input id="nameInput" disabled placeholder="加载中..." />
       </div>
+      
       <div class="form-group">
-        <label>新密码（留空则不修改）</label
-        ><input
-          type="password"
-          id="pwdInput"
-          placeholder="至少8位含大小写字母和数字"
+        <label>学号/工号</label>
+        <input id="uidInput" disabled placeholder="加载中..." />
+      </div>
+      
+      <!-- 可修改的信息 -->
+      <div class="section-title">修改信息</div>
+      
+      <div class="form-group">
+        <label>手机号</label>
+        <input 
+          id="phoneInput" 
+          type="tel" 
+          placeholder="请输入手机号" 
+          maxlength="11"
         />
       </div>
+      
+      <div class="form-group">
+        <label>新密码（留空则不修改）</label>
+        <input
+          type="password"
+          id="pwdInput"
+          placeholder="至少8位，包含大小写字母和数字"
+        />
+        <div class="password-hint">密码至少8位，必须包含大小写字母和数字</div>
+      </div>
+      
+      <div class="form-group">
+        <label>确认新密码</label>
+        <input
+          type="password"
+          id="confirmPwdInput"
+          placeholder="请再次输入新密码"
+        />
+      </div>
+      
       <button class="btn" onclick="saveProfile()">保存修改</button>
       <div class="error" id="errorMsg"></div>
+      <div class="success" id="successMsg"></div>
     </div>
+    
     <script>
-      let token = localStorage.getItem("token"),
-        currentUid = localStorage.getItem("uid"),
-        currentRole = localStorage.getItem("role");
-      document.getElementById("roleDisplay").innerText =
-        currentRole === "student" ? "学生" : "教职工";
-      document.getElementById("uidDisplay").innerText = currentUid;
+      // 获取用户信息
+      let token = localStorage.getItem("token");
+      let currentUid = localStorage.getItem("uid");
+      let currentRole = localStorage.getItem("role");
+      let currentName = localStorage.getItem("name");
+      let currentPhone = localStorage.getItem("phone") || "";
+
+      // 页面加载时初始化数据
+      document.addEventListener('DOMContentLoaded', function() {
+        // 显示角色
+        if(currentRole === "student")
+          document.getElementById("roleInput").value ="学生"
+        else
+          document.getElementById("roleInput").value ="教师"
+
+
+        // 显示学号/工号
+        document.getElementById("uidInput").value = currentUid;
+        
+        // 显示姓名
+        document.getElementById("nameInput").value = currentName || "加载中...";
+        
+        // 显示手机号
+        document.getElementById("phoneInput").value = currentPhone;
+        
+      });
+
+
+
+      // 保存修改
       async function saveProfile() {
-        const name = document.getElementById("nameInput").value.trim();
+        // 清空之前的消息
+        document.getElementById("errorMsg").innerText = "";
+        document.getElementById("successMsg").innerText = "";
+        
+        const phone = document.getElementById("phoneInput").value.trim();
         const pwd = document.getElementById("pwdInput").value.trim();
-        if (!name) {
-          document.getElementById("errorMsg").innerText = "姓名不能为空";
+        const confirmPwd = document.getElementById("confirmPwdInput").value.trim();
+        
+
+        // 验证输入非空有效
+        // 获取用户信息
+        let currentPhone = localStorage.getItem("phone") || "";
+        if (!(phone != currentPhone||phone ||( pwd&&confirmPwd))) {
+          document.getElementById("errorMsg").innerText = "修改内容为空";
           return;
         }
+        // 验证手机号
+        if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+          document.getElementById("errorMsg").innerText = "请输入有效的手机号";
+          return;
+        }
+        
+        // 验证密码
+        if (pwd) {
+          if (pwd.length < 8) {
+            document.getElementById("errorMsg").innerText = "密码至少需要8位";
+            return;
+          }
+          
+          if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(pwd)) {
+            document.getElementById("errorMsg").innerText = "密码必须包含大小写字母和数字";
+            return;
+          }
+          
+          if (pwd !== confirmPwd) {
+            document.getElementById("errorMsg").innerText = "两次输入的密码不一致";
+            return;
+          }
+        }
+        
+        // 显示确认对话框
+        if (!confirm("是否确认修改个人信息？")) {
+          return;
+        }
+        
         try {
+          // 构建请求数据
+          const requestData = {};
+          
+          if (phone) {
+            requestData.phone = phone;
+          }
+          
+          if (pwd) {
+            requestData.password = pwd;
+          }
+          
+          // 发送请求
           const res = await fetch("/api/userinfo", {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
-              Authorization: token,
+              "Authorization": token,
             },
-            body: JSON.stringify({ name, password: pwd || undefined }),
+            body: JSON.stringify(requestData),
           });
+          
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          localStorage.setItem("name", name);
-          alert("修改成功");
+          
+          if (!res.ok) {
+            throw new Error(data.error || "修改失败");
+          }
+          
+          // 更新本地存储
+          if (phone) {
+            localStorage.setItem("phone", phone);
+            document.getElementById("phoneInput").value = phone;
+
+          }
+          
+          // 清空密码输入框
           document.getElementById("pwdInput").value = "";
+          document.getElementById("confirmPwdInput").value = "";
+          
+          // 显示成功消息
+          document.getElementById("successMsg").innerText = "修改成功！";
+          
+          // 3秒后清空成功消息
+          setTimeout(() => {
+            document.getElementById("successMsg").innerText = "";
+          }, 3000);
+          
         } catch (e) {
-          document.getElementById("errorMsg").innerText = e.message;
+          document.getElementById("errorMsg").innerText = e.message || "修改失败，请重试";
         }
       }
+      
+      // 添加回车键支持
+      document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          saveProfile();
+        }
+      });
     </script>
   </body>
 </html>

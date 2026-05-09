@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, g, send_from_directory
 from functools import wraps
 from werkzeug.utils import secure_filename
-
+import json
+import os
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['SECRET_KEY'] = secrets.token_hex(32)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -12,6 +13,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 SALT = "CampusFakeSalt2024!"
 tokens = {}
+# 内存存储验证码和过期时间
+verification_codes = {}
 
 # ---------- 数据库初始化 ----------
 def init_db():
@@ -19,7 +22,7 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (uid TEXT PRIMARY KEY, name TEXT, password TEXT, role TEXT,
-                  locked INTEGER DEFAULT 0, unlock_time TEXT, login_fails INTEGER DEFAULT 0)''')
+                  locked INTEGER DEFAULT 0, unlock_time TEXT, login_fails INTEGER DEFAULT 0, registed INTEGER DEFAULT 0,phone TEXT )''')
     c.execute('''CREATE TABLE IF NOT EXISTS messages
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   sender TEXT, receiver TEXT, content TEXT, msg_type TEXT DEFAULT 'text',
@@ -60,7 +63,33 @@ def init_db():
     conn.commit()
     _seed_data(conn)
     conn.close()
-
+def _load_users_from_json(filepath):
+    """
+    从JSON文件加载用户数据
+    users:(uid,name,password,role,locked)
+    """
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            users_data = []
+            for user in data:
+                uid = user.get('uid', '')
+                name = user.get('name', '')
+                if uid and name:  # 确保必需字段存在
+                    # 密码默认为123456，角色默认为student
+                    password=hash_password('123456')
+                    role = get_role_by_uid(uid)
+                    users_data.append((uid, name, password, role,0,0,'',0,''))
+            return users_data
+        else:
+            print(f"警告: 文件 {filepath} 不存在，将使用默认数据")
+            return None
+    except Exception as e:
+        print(f"加载用户数据时出错: {e}")
+        return None
+    
 def _seed_data(conn):
     c = conn.cursor()
     if c.execute('SELECT COUNT(*) FROM classrooms').fetchone()[0] == 0:
@@ -77,13 +106,13 @@ def _seed_data(conn):
             ('软件工程','赵老师','B202',3,'14:00','15:40')
         ])
     if c.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 0:
-        c.executemany('INSERT INTO events VALUES (?,?,?,?,?,?,?,?)', [
+        c.executemany('INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?)', [
             (1,'秋季运动会','体育赛事','2026-05-10 08:00','2026-05-10 17:00','体育场','全体','体育部','一年一度校运会'),
             (2,'校园十大歌手','文艺活动','2026-05-15 18:30','2026-05-15 21:00','大礼堂','学生','学生会','展示你的歌喉'),
             (3,'人工智能讲座','学术讲座','2026-05-08 14:00','2026-05-08 16:00','报告厅A','全体','计算机学院','特邀教授讲座')
         ])
     if c.execute('SELECT COUNT(*) FROM tutor_duty').fetchone()[0] == 0:
-        c.executemany('INSERT INTO tutor_duty VALUES (?,?,?,?,?,?,?,?)', [
+        c.executemany('INSERT INTO tutor_duty VALUES (?,?,?,?,?,?,?,?,?)', [
             (1,'李明','TE2023001','计算机学院','2026-05-01','08:00','12:00','教学楼A301','123456789'),
             (2,'王芳','TE2023002','计算机学院','2026-05-01','14:00','18:00','教学楼B205','987654321')
         ])
@@ -93,9 +122,22 @@ def _seed_data(conn):
             ('TE2023002','王芳','计算机学院','副教授','教学楼B栋205室','987654321'),
             ('TE2023003','张强','数学学院','讲师','教学楼C栋102室','1122334455')
         ])
+    if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
+        users_data = _load_users_from_json('users.json')
+        if users_data:
+            c.executemany('INSERT INTO users (uid,name,password,role,locked,unlock_time, login_fails,registed,phone) VALUES (?,?,?,?,?,?,?,?,?)', users_data)
     conn.commit()
 
 # ---------- 辅助函数 ----------
+def send_sms(phone, code):
+    """
+    发送短信验证码函数
+    这里暂时空置，验证码默认发送123456
+    """
+    # 这里应该是您实现的短信发送逻辑
+    return True
+
+
 def hash_password(password):
     return hashlib.sha256((password + SALT).encode()).hexdigest()
 
@@ -118,6 +160,75 @@ def get_db():
     conn = sqlite3.connect('campus.db')
     conn.row_factory = sqlite3.Row
     return conn
+
+def get_role_by_uid(uid: str) -> str:
+    """
+    根据用户ID判断角色
+    
+    Args:
+        uid: 用户ID（学号/工号）
+    
+    Returns:
+        str: 角色
+            - 'student': 学生
+            - 'teacher': 教师
+            - 'manager': 管理员
+    """
+    uid = uid.strip()
+    
+    # 1. 学生学号判断（华南师范大学格式）
+    # 本科生：12位，202开头
+    if re.match(r'^202\d{9}$', uid):
+        return 'student'
+    
+    # 研究生：11位，以2开头（硕士）或1开头（博士）
+    elif re.match(r'^[12][0-9]{10}$', uid):
+        return 'student'
+    
+    # 2. 教师工号判断
+    # 教师：以TE/T/JG开头，或纯数字工号
+    elif (re.match(r'^TE\d{7}$', uid) or    # 专任教师
+          re.match(r'^T\d{8}$', uid) or      # 兼职教师
+          re.match(r'^JG\d{6}$', uid) or     # 教工
+          re.match(r'^\d{6,8}$', uid)):      # 纯数字工号
+        return 'teacher'
+    
+    # 3. 管理员账号
+    elif (re.match(r'^ADMIN\d{3}$', uid) or
+          re.match(r'^MGR\d{4}$', uid) or
+          uid.lower() in ['admin', 'administrator']):
+        return 'manager'
+    
+    # 4. 默认返回teacher（兼容原有逻辑）
+    else:
+        return 'teacher'
+
+def get_user_info_by_uid(uid):
+    """根据uid查找用户完整信息"""
+    conn = sqlite3.connect('campus.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT uid, name, password, role, locked,unlock_time, login_fails,registed FROM users WHERE uid = ?", (uid,))
+    
+    result = cursor.fetchone()
+    
+    conn.close()
+    
+    if result:
+        # 将结果转为字典
+        user_info = {
+            'uid': result[0],
+            'name': result[1],
+            'password': result[2],
+            'role': result[3],
+            'locked': bool(result[4]),
+            'unlock_time':result[5] , 
+            'login_fails':result[6],
+            'registed':bool(result[7])
+        }
+        return user_info
+    else:
+        return None
 
 # ---------- 路由 ----------
 @app.route('/')
@@ -162,21 +273,43 @@ def register():
     confirm = data.get('confirm','').strip()
     if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', password):
         return jsonify({'error':'密码需包含大小写字母和数字，至少8位'}),400
+    
     if password != confirm:
         return jsonify({'error':'两次密码不一致'}),400
-    role = 'student' if re.match(r'^202\d{5}$', uid) else 'teacher'
+    
     conn = get_db()
+    info = conn.execute('SELECT * FROM users WHERE uid=?',(uid,)).fetchone()
+
+    # 检查用户信息
+    if info is None:
+        return jsonify({'error': '无该学工号'}), 409
+
+    if info['name'] != name:
+        return jsonify({'error': '学工号与姓名不匹配!'}), 409
+    
+    if info['registed']:  # 使用get方法避免KeyError
+        return jsonify({'error': '该用户已注册!'}), 409
+    
+    # 所有检查通过后，再连接数据库进行更新
     try:
-        if conn.execute('SELECT uid FROM users WHERE uid=?',(uid,)).fetchone():
-            return jsonify({'error':'该学工号已注册'}),409
-        conn.execute('INSERT INTO users (uid,name,password,role,locked) VALUES (?,?,?,?,0)',
-                     (uid, name, hash_password(password), role))
+        cursor = conn.cursor()
+        
+        # 修正的SQL语句
+        hashed_pwd = hash_password(password)  # 确保有hash_password函数
+        cursor.execute('UPDATE users SET password = ?, registed = 1 WHERE uid = ?', 
+                     (hashed_pwd, uid))
+        
         conn.commit()
-        return jsonify({'message':'注册成功'}),201
-    except:
-        return jsonify({'error':'系统繁忙'}),500
+        return jsonify({'message': '注册成功'}), 201
+        
+    except Exception as e:
+        # 记录错误以便调试
+        print(f"注册错误: {e}")
+        return jsonify({'error': '系统繁忙'}), 500
+        
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -187,6 +320,8 @@ def login():
     try:
         user = conn.execute('SELECT * FROM users WHERE uid=?',(uid,)).fetchone()
         if not user: return jsonify({'error':'账号不存在'}),404
+        if not user['registed']: return jsonify({'error':'账号未注册'}),404
+
         if user['locked']:
             unlock = datetime.fromisoformat(user['unlock_time'])
             if datetime.now() < unlock:
@@ -215,6 +350,175 @@ def login():
     finally:
         conn.close()
 
+
+@app.route('/api/change_password', methods=['POST'])
+def change_password():
+    """
+    处理密码修改请求
+    支持两种操作：
+    1. send_code: 发送验证码
+    2. reset_password: 重置密码
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "请求数据为空"}), 400
+        
+        action = data.get('action')
+        
+        if action == 'send_code':
+            return handle_send_code(data)
+        elif action == 'reset_password':
+            return handle_reset_password(data)
+        else:
+            return jsonify({"error": "无效的操作类型"}), 400
+            
+    except Exception as e:
+        return jsonify({"error": f"服务器内部错误: {str(e)}"}), 500
+
+def handle_send_code(data):
+    """处理发送验证码请求"""
+    phone = data.get('phone')
+    uid=data.get('uid')
+    if not phone:
+        return jsonify({"error": "手机号不能为空"}), 400
+    
+    # 验证手机号格式
+    if not phone.startswith('1') or len(phone) != 11 or not phone.isdigit():
+        return jsonify({"error": "手机号格式不正确"}), 400
+    
+    # 检查手机号是否在系统中注册
+    conn = get_db()
+    
+    
+    try:
+        user = conn.execute('SELECT * FROM users WHERE uid=?',(uid,)).fetchone()        
+        if not user:
+            return jsonify({"error": "该账号不存在"}), 404
+        if not user['phone']==phone:
+            return jsonify({"error": "学号/工号与手机号不匹配"}), 404
+
+        # 生成6位随机验证码
+        code = 123456
+        
+        # 调用短信发送函数
+        send_result = send_sms(phone, code)
+        
+        if not send_result:
+            return jsonify({"error": "短信发送失败，请稍后重试"}), 500
+        
+        # 存储验证码和相关信息（5分钟有效期）
+        verification_codes[phone] = {
+            'code': code,
+            'expires_at': time.time() + 300,  # 5分钟后过期
+            'attempts': 0,  # 验证尝试次数
+            'uid': user['uid']  # 存储对应的uid
+        }
+        
+        # 清理过期的验证码
+        current_time = time.time()
+        expired_phones = [
+            p for p, info in verification_codes.items() 
+            if info['expires_at'] < current_time
+        ]
+        for p in expired_phones:
+            del verification_codes[p]
+        
+        return jsonify({
+            "success": True,
+            "message": "验证码已发送"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"发送验证码失败: {str(e)}"}), 500
+    finally:
+        conn.close()
+
+def handle_reset_password(data):
+    """处理重置密码请求"""
+    phone = data.get('phone')
+    code = data.get('code')
+    new_password = data.get('new_password')
+    uid = data.get('uid')  # 从验证码信息中获取uid，或从前端传入
+    
+    if not all([phone, code, new_password]):
+        return jsonify({"error": "请填写完整信息"}), 400
+    
+    # 验证密码强度
+    if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', new_password):
+        return jsonify({'error':'密码需包含大小写字母和数字，至少8位'}),400    
+    # 检查验证码
+    if phone not in verification_codes:
+        return jsonify({"error": "验证码已过期，请重新获取"}), 400
+    
+    verification_info = verification_codes[phone]
+    
+    # 检查验证码是否过期
+    if time.time() > verification_info['expires_at']:
+        del verification_codes[phone]
+        return jsonify({"error": "验证码已过期，请重新获取"}), 400
+    
+    # 检查验证码是否正确
+    if verification_info['code'] != code:
+        verification_info['attempts'] += 1
+        
+        # 如果尝试次数过多，清除验证码
+        if verification_info['attempts'] >= 5:
+            del verification_codes[phone]
+            return jsonify({"error": "验证失败次数过多，请重新获取验证码"}), 400
+        
+        return jsonify({"error": "验证码不正确"}), 400    
+    
+    conn = get_db()
+    
+    try:
+        # 验证uid和手机号的对应关系
+        user = conn.execute('SELECT * FROM users WHERE uid=?',(uid,)).fetchone()
+        if not user['phone']==phone:
+            return jsonify({"error": "学号/工号与手机号不匹配"}), 404
+        
+        # 更新密码
+        hashed_password = hash_password(new_password)
+        
+        user.execute(
+            "UPDATE users SET password = ? WHERE uid = ?",
+            (hashed_password, uid)
+        )
+        
+        conn.commit()
+        
+        # 清除已使用的验证码
+        if phone in verification_codes:
+            del verification_codes[phone]
+        
+        return jsonify({
+            "success": True,
+            "message": "密码修改成功"
+        }), 200
+        
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"error": f"数据库错误: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"重置密码失败: {str(e)}"}), 500
+    finally:
+        conn.close()
+
+# 可选的定时清理任务（如果需要）
+def cleanup_expired_codes():
+    """清理过期的验证码"""
+    current_time = time.time()
+    expired_phones = [
+        p for p, info in verification_codes.items() 
+        if info['expires_at'] < current_time
+    ]
+    for phone in expired_phones:
+        if phone in verification_codes:
+            del verification_codes[phone]
+
+
+
+
 @app.route('/api/logout', methods=['POST'])
 @token_required
 def logout():
@@ -233,21 +537,20 @@ def userinfo():
 @token_required
 def update_userinfo():
     data = request.get_json()
-    new_name = data.get('name','').strip()
+    new_phone=data.get('phone','').strip()
     new_password = data.get('password','').strip()
-    if not new_name:
-        return jsonify({'error':'姓名不能为空'}),400
     conn = get_db()
     try:
         if new_password:
             if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', new_password):
                 return jsonify({'error':'密码需包含大小写字母和数字，至少8位'}),400
-            conn.execute('UPDATE users SET name=?, password=? WHERE uid=?',
-                         (new_name, hash_password(new_password), g.current_user['uid']))
-        else:
-            conn.execute('UPDATE users SET name=? WHERE uid=?', (new_name, g.current_user['uid']))
+            conn.execute('UPDATE users SET  password=?  WHERE uid=?',
+                         (hash_password(new_password), g.current_user['uid']))
+        if new_phone:
+            conn.execute('UPDATE users SET  phone=? WHERE uid=?',
+                         (new_phone, g.current_user['uid']))
         conn.commit()
-        return jsonify({'message':'修改成功','name':new_name})
+        return jsonify({'message':'修改成功'})
     except:
         return jsonify({'error':'系统繁忙'}),500
     finally:

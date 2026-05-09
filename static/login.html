@@ -11,6 +11,7 @@
         --card: #fff;
         --border: #e2e8f0;
         --danger: #ef4444;
+        --success: #10b981;
       }
       * {
         margin: 0;
@@ -31,6 +32,7 @@
         border-radius: 24px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         padding: 40px 32px;
+        position: relative;
       }
       .logo-section {
         text-align: center;
@@ -73,6 +75,7 @@
       }
       .input-group {
         margin-bottom: 18px;
+        position: relative;
       }
       .input-group label {
         display: block;
@@ -110,10 +113,80 @@
         font-size: 13px;
         margin-top: 8px;
       }
+      .success-msg {
+        color: var(--success);
+        font-size: 13px;
+        margin-top: 8px;
+      }
       .role-hint {
         font-size: 13px;
         color: #64748b;
         margin-top: 6px;
+      }
+      .forgot-password {
+        text-align: right;
+        margin-bottom: 20px;
+      }
+      .forgot-password button {
+        background: none;
+        border: none;
+        color: var(--primary);
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: underline;
+        padding: 0;
+      }
+      .forgot-password button:hover {
+        color: #4338ca;
+      }
+      .sms-input-group {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .sms-input-group input {
+        flex: 1;
+      }
+      .send-sms-btn {
+        padding: 10px 16px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.3s;
+      }
+      .send-sms-btn:disabled {
+        background: #94a3b8;
+        cursor: not-allowed;
+      }
+      .send-sms-btn:hover:not(:disabled) {
+        background: #4338ca;
+      }
+      .countdown {
+        color: #64748b;
+        font-size: 12px;
+        margin-top: 4px;
+        text-align: right;
+      }
+      .back-to-login {
+        text-align: center;
+        margin-top: 20px;
+      }
+      .back-to-login button {
+        background: none;
+        border: none;
+        color: var(--primary);
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: underline;
+        padding: 0;
+      }
+      .back-to-login button:hover {
+        color: #4338ca;
       }
     </style>
   </head>
@@ -130,6 +203,8 @@
         </button>
         <button id="tabRegister" onclick="switchTab('register')">注册</button>
       </div>
+
+      <!-- 登录表单 -->
       <div id="loginForm" class="auth-form active">
         <div class="input-group">
           <label>学号/工号</label
@@ -139,9 +214,14 @@
           <label>密码</label
           ><input type="password" id="loginPwd" placeholder="请输入密码" />
         </div>
+        <div class="forgot-password">
+          <button onclick="showForgotPassword()">忘记密码？</button>
+        </div>
         <button class="auth-btn" onclick="login()">登 录</button>
         <div class="error-msg" id="loginError"></div>
       </div>
+
+      <!-- 注册表单 -->
       <div id="registerForm" class="auth-form">
         <div class="input-group">
           <label>学号/工号</label
@@ -149,6 +229,14 @@
             id="regUid"
             placeholder="例：202300001 或 TE2023001"
             oninput="showRoleHint()"
+          />
+        </div>
+
+        <div class="input-group">
+          <label>手机号</label
+          ><input 
+          id="phone" 
+          placeholder="手机号" 
           />
         </div>
         <div class="role-hint" id="roleHint"></div>
@@ -170,8 +258,63 @@
         <button class="auth-btn" onclick="register()">注 册</button>
         <div class="error-msg" id="regError"></div>
       </div>
+
+      <!-- 忘记密码表单 -->
+      <div id="forgotPasswordForm" class="auth-form">
+        <div class="input-group">
+          <label>学工号</label
+          ><input id="uid" placeholder="请输入学工号" />
+        </div>
+
+        <div class="input-group">
+          <label>手机号</label>
+          <div class="sms-input-group">
+            <input
+              id="resetPhone"
+              placeholder="请输入绑定的手机号"
+              type="tel"
+            />
+            <button id="sendSmsBtn" class="send-sms-btn" onclick="sendSmsCode()">
+              发送验证码
+            </button>
+          </div>
+          <div id="countdown" class="countdown"></div>
+        </div>
+
+        <div class="input-group">
+          <label>验证码</label
+          ><input id="smsCode" placeholder="请输入短信验证码" />
+        </div>
+
+        <div class="input-group">
+          <label>新密码</label
+          ><input
+            type="password"
+            id="newPassword"
+            placeholder="请输入新密码"
+          />
+        </div>
+
+        <div class="input-group">
+          <label>确认新密码</label
+          ><input
+            type="password"
+            id="confirmNewPassword"
+            placeholder="请再次输入新密码"
+          />
+        </div>
+        <button class="auth-btn" onclick="resetPassword()">修改密码</button>
+        <div class="error-msg" id="resetError"></div>
+        <div class="success-msg" id="resetSuccess"></div>
+        <div class="back-to-login">
+          <button onclick="backToLogin()">← 返回登录</button>
+        </div>
+      </div>
     </div>
     <script>
+      let countdownInterval = null;
+      let countdownTime = 60;
+
       function switchTab(t) {
         document
           .getElementById("tabLogin")
@@ -185,16 +328,180 @@
         document
           .getElementById("registerForm")
           .classList.toggle("active", t === "register");
+        // 隐藏忘记密码表单
+        document.getElementById("forgotPasswordForm").classList.remove("active");
+        
+        // 清空所有错误信息
+        clearErrorMessages();
       }
+
+      function showForgotPassword() {
+        // 隐藏登录表单
+        document.getElementById("loginForm").classList.remove("active");
+        document.getElementById("registerForm").classList.remove("active");
+        document.getElementById("forgotPasswordForm").classList.add("active");
+        document.getElementById("tabLogin").classList.remove("active");
+        document.getElementById("tabRegister").classList.remove("active");
+        
+        // 清空所有错误信息
+        clearErrorMessages();
+      }
+
+      function backToLogin() {
+        document.getElementById("forgotPasswordForm").classList.remove("active");
+        document.getElementById("loginForm").classList.add("active");
+        document.getElementById("tabLogin").classList.add("active");
+        
+        // 停止倒计时
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+        const sendSmsBtn = document.getElementById("sendSmsBtn");
+        sendSmsBtn.disabled = false;
+        sendSmsBtn.textContent = "发送验证码";
+        document.getElementById("countdown").textContent = "";
+        
+        // 清空表单
+        clearResetForm();
+      }
+
+      function clearErrorMessages() {
+        document.getElementById("loginError").textContent = "";
+        document.getElementById("regError").textContent = "";
+        document.getElementById("resetError").textContent = "";
+        document.getElementById("resetSuccess").textContent = "";
+      }
+
+      function clearResetForm() {
+        document.getElementById("resetPhone").value = "";
+        document.getElementById("smsCode").value = "";
+        document.getElementById("newPassword").value = "";
+        document.getElementById("confirmNewPassword").value = "";
+      }
+
+      async function sendSmsCode() {
+        const uid=document.getElementById("uid").value.trim();
+        const phone = document.getElementById("resetPhone").value.trim();
+        const sendSmsBtn = document.getElementById("sendSmsBtn");
+        
+        if (!phone) {
+          document.getElementById("resetError").textContent = "请输入手机号";
+          return;
+        }
+        
+        if (!/^1[3-9]\d{9}$/.test(phone)) {
+          document.getElementById("resetError").textContent = "请输入正确的手机号";
+          return;
+        }
+        
+        try {
+          const res = await fetch("/api/change_password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uid:uid, 
+              phone: phone,
+              action: "send_code" 
+            }),
+          });
+          
+          const data = await res.json();
+          
+          if (!res.ok) {
+            document.getElementById("resetError").textContent = data.error || "发送验证码失败";
+          } else {
+            document.getElementById("resetError").textContent = "";
+            document.getElementById("resetSuccess").textContent = "验证码已发送";
+            
+            // 开始倒计时
+            sendSmsBtn.disabled = true;
+            countdownTime = 60;
+            
+            countdownInterval = setInterval(() => {
+              countdownTime--;
+              sendSmsBtn.textContent = `重新发送(${countdownTime}s)`;
+              document.getElementById("countdown").textContent = `${countdownTime}秒后可重新发送`;
+              
+              if (countdownTime <= 0) {
+                clearInterval(countdownInterval);
+                sendSmsBtn.disabled = false;
+                sendSmsBtn.textContent = "发送验证码";
+                document.getElementById("countdown").textContent = "";
+              }
+            }, 1000);
+          }
+        } catch (e) {
+          document.getElementById("resetError").textContent = "网络错误，请重试";
+        }
+      }
+
+      async function resetPassword() {
+        const uid=document.getElementById("uid").value.trim();
+        const phone = document.getElementById("resetPhone").value.trim();
+        const smsCode = document.getElementById("smsCode").value.trim();
+        const newPassword = document.getElementById("newPassword").value.trim();
+        const confirmPassword = document.getElementById("confirmNewPassword").value.trim();
+        
+        // 验证输入
+        if (!(uid||phone || !smsCode || !newPassword || !confirmPassword)) {
+          document.getElementById("resetError").textContent = "请填写完整信息";
+          return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+          document.getElementById("resetError").textContent = "两次输入的密码不一致";
+          return;
+        }
+        
+        if (newPassword.length < 8) {
+          document.getElementById("resetError").textContent = "密码长度至少8位";
+          return;
+        }
+        
+        try {
+          const res = await fetch("/api/change_password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              uid:uid,
+              phone: phone,
+              code: smsCode,
+              new_password: newPassword,
+              action: "reset_password" 
+            }),
+          });
+          
+          const data = await res.json();
+          
+          if (!res.ok) {
+            document.getElementById("resetError").textContent = data.error || "修改密码失败";
+            document.getElementById("resetSuccess").textContent = "";
+          } else {
+            document.getElementById("resetError").textContent = "";
+            document.getElementById("resetSuccess").textContent = "密码修改成功，请返回登录";
+            
+            // 3秒后自动跳转回登录
+            setTimeout(() => {
+              backToLogin();
+            }, 3000);
+          }
+        } catch (e) {
+          document.getElementById("resetError").textContent = "网络错误，请重试";
+          document.getElementById("resetSuccess").textContent = "";
+        }
+      }
+
       function showRoleHint() {
         const uid = document.getElementById("regUid").value.trim();
-        if (/^202\d{5}$/.test(uid))
+        if (/^202\d{9}$/.test(uid))
           document.getElementById("roleHint").innerText = "系统判定：学生角色";
         else if (uid)
           document.getElementById("roleHint").innerText =
             "系统判定：教职工角色";
         else document.getElementById("roleHint").innerText = "";
       }
+      
       async function register() {
         const uid = document.getElementById("regUid").value.trim(),
           name = document.getElementById("regName").value.trim(),
@@ -217,6 +524,7 @@
           document.getElementById("regError").innerText = "网络错误";
         }
       }
+      
       async function login() {
         const uid = document.getElementById("loginUid").value.trim(),
           pwd = document.getElementById("loginPwd").value.trim();
