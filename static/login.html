@@ -235,7 +235,7 @@
         <div class="input-group">
           <label>手机号</label
           ><input 
-          id="phone" 
+          id="regPhone" 
           placeholder="手机号" 
           />
         </div>
@@ -506,18 +506,25 @@
         const uid = document.getElementById("regUid").value.trim(),
           name = document.getElementById("regName").value.trim(),
           pwd = document.getElementById("regPwd").value.trim(),
-          confirm = document.getElementById("regConfirm").value.trim();
+          confirm = document.getElementById("regConfirm").value.trim(),
+          phone=document.getElementById("regPhone").value.trim();
         try {
           const res = await fetch("/api/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ uid, name, password: pwd, confirm }),
+            body: JSON.stringify({ uid, name, password: pwd, confirm,phone }),
           });
           const data = await res.json();
           if (!res.ok) {
             document.getElementById("regError").innerText = data.error;
           } else {
             alert("注册成功！请登录");
+            localStorage.setItem("name", data.name);
+            localStorage.setItem("role", data.role);
+            localStorage.setItem("uid", uid);
+            localStorage.setItem("phone", phone);
+
+
             switchTab("login");
           }
         } catch (e) {

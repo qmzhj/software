@@ -271,6 +271,7 @@ def register():
     name = data.get('name','').strip()
     password = data.get('password','').strip()
     confirm = data.get('confirm','').strip()
+    phone = data.get('phone','').strip()
     if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', password):
         return jsonify({'error':'密码需包含大小写字母和数字，至少8位'}),400
     
@@ -296,8 +297,8 @@ def register():
         
         # 修正的SQL语句
         hashed_pwd = hash_password(password)  # 确保有hash_password函数
-        cursor.execute('UPDATE users SET password = ?, registed = 1 WHERE uid = ?', 
-                     (hashed_pwd, uid))
+        cursor.execute('UPDATE users SET password = ?,phone=?, registed = 1 WHERE uid = ?', 
+                     (hashed_pwd, phone,uid))
         
         conn.commit()
         return jsonify({'message': '注册成功'}), 201
