@@ -137,11 +137,11 @@
           label: "🔎 用户搜索",
           form: '<input id="kw" placeholder="学号/姓名"><button class="btn" onclick="searchUsers()">搜索</button>',
         },
-        {
+        /*{
           key: "freeRoom",
           label: "🏫 空闲教室",
           form: '<input type="date" id="rdate"><input type="time" id="rstart" value="08:00"><input type="time" id="rend" value="10:00"><button class="btn" onclick="freeRooms()">查询</button>',
-        },
+        },*/
         { key: "events", label: "🎉 赛事活动", form: "" },
         {
           key: "tutor",
@@ -156,6 +156,11 @@
         {
           key: "course",
           label: "📅 课程安排",
+          form: '<input id="croom" placeholder="教室编号"><button class="btn" onclick="loadCourses()">查询</button>',
+        },
+        {
+          key: "announcements",
+          label: "📢 公告",
           form: '<input id="croom" placeholder="教室编号"><button class="btn" onclick="loadCourses()">查询</button>',
         },
       ];

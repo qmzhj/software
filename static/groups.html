@@ -195,14 +195,14 @@
   <body>
     <div class="sidebar">
       <div class="sidebar-header">
-        <span>我的群聊</span>
+        <span>我的分组</span>
         <button onclick="createGroupUI()">+ 新建</button>
       </div>
       <div class="group-cats" id="catTags"></div>
       <div class="group-list" id="groupList"></div>
     </div>
     <div class="chat-area">
-      <div class="chat-header" id="chatHeader">👥 选择一个群聊</div>
+      <div class="chat-header" id="chatHeader">👥 选择一个分组</div>
       <div class="messages" id="msgContainer">
         <div style="text-align: center; color: #64748b; padding: 40px">
           暂无消息
@@ -241,12 +241,9 @@
         api("/api/groups").then((groups) => {
           const cats = [
             "all",
-            "课程群",
-            "比赛群",
-            "班级群",
-            "年级群",
-            "学院群",
-            "办公群",
+            "好友分组",
+            "课程分组",
+            "即时聊天",
           ];
           document.getElementById("catTags").innerHTML = cats
             .map(
