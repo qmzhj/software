@@ -399,7 +399,7 @@ def handle_send_code(data):
             return jsonify({"error": "学号/工号与手机号不匹配"}), 404
 
         # 生成6位随机验证码
-        code = 123456
+        code = "123456"
         
         # 调用短信发送函数
         send_result = send_sms(phone, code)
@@ -412,7 +412,6 @@ def handle_send_code(data):
             'code': code,
             'expires_at': time.time() + 300,  # 5分钟后过期
             'attempts': 0,  # 验证尝试次数
-            'uid': user['uid']  # 存储对应的uid
         }
         
         # 清理过期的验证码
@@ -480,7 +479,7 @@ def handle_reset_password(data):
         # 更新密码
         hashed_password = hash_password(new_password)
         
-        user.execute(
+        conn.execute(
             "UPDATE users SET password = ? WHERE uid = ?",
             (hashed_password, uid)
         )
