@@ -60,6 +60,18 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS teacher_office
                  (uid TEXT PRIMARY KEY, name TEXT, college TEXT, title TEXT,
                   office TEXT, phone TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_groups
+                 (group_id TEXT PRIMARY KEY, name TEXT, creator TEXT, created_at REAL,
+                  group_type TEXT DEFAULT 'custom', category TEXT DEFAULT '自定义')''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_group_members
+                 (group_id TEXT, uid TEXT, added_at REAL,
+                  PRIMARY KEY(group_id, uid))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_group_chats
+                 (group_id TEXT, chat_id TEXT, chat_name TEXT,
+                  PRIMARY KEY(group_id, chat_id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS friends
+                 (uid TEXT, friend_uid TEXT, created_at REAL,
+                  PRIMARY KEY(uid, friend_uid))''')
     conn.commit()
     _seed_data(conn)
     conn.close()
@@ -301,6 +313,8 @@ def register():
                      (hashed_pwd, phone,uid))
         
         conn.commit()
+        conn.close()
+        ensure_default_groups(uid)
         return jsonify({'message': '注册成功'}), 201
         
     except Exception as e:
@@ -345,6 +359,8 @@ def login():
         tokens[token] = uid
         conn.execute('UPDATE users SET login_fails=0, locked=0 WHERE uid=?',(uid,))
         conn.commit()
+        conn.close()
+        ensure_default_groups(uid)
         return jsonify({'message':'登录成功','token':token,'name':user['name'],'role':user['role']}),200
     except:
         return jsonify({'error':'系统繁忙'}),500
@@ -636,6 +652,429 @@ def revoke_message(msg_id):
     conn.commit(); conn.close()
     return jsonify({'message':'已撤回'})
 
+
+# ---------- 用户群组（群组容器） ----------
+@app.route('/api/user-groups', methods=['GET'])
+@token_required
+def get_user_groups():
+    uid = g.current_user['uid']
+    conn = get_db()
+    # 获取用户所在的群组
+    groups = conn.execute('''SELECT g.* FROM user_groups g
+                             JOIN user_group_members gm ON g.group_id = gm.group_id
+                             WHERE gm.uid = ?
+                             ORDER BY g.created_at DESC''', (uid,)).fetchall()
+    
+    result = []
+    for grp in groups:
+        # 获取群组的聊天室数量
+        chat_count = conn.execute('SELECT COUNT(*) FROM user_group_chats WHERE group_id=?',
+                                  (grp['group_id'],)).fetchone()[0]
+        # 获取群组的成员数量（排除自己）
+        member_count = conn.execute('SELECT COUNT(*) FROM user_group_members WHERE group_id=? AND uid!=?',
+                                    (grp['group_id'], uid)).fetchone()[0]
+        result.append({
+            'group_id': grp['group_id'],
+            'name': grp['name'],
+            'creator': grp['creator'],
+            'created_at': grp['created_at'],
+            'group_type': grp['group_type'],
+            'category': grp['category'],
+            'chat_count': chat_count,
+            'member_count_except_self': member_count
+        })
+    conn.close()
+    return jsonify(result)
+
+@app.route('/api/user-groups', methods=['POST'])
+@token_required
+def create_user_group():
+    creator = g.current_user['uid']
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    category = data.get('category', '自定义')
+    member_uids = data.get('members', [])
+    chat_ids = data.get('chats', [])
+    
+    if not name:
+        return jsonify({'error': '群组名称不能为空'}), 400
+    
+    group_id = secrets.token_hex(8)
+    conn = get_db()
+    try:
+        now = time.time()
+        # 创建群组
+        conn.execute('INSERT INTO user_groups VALUES (?,?,?,?,?,?)',
+                     (group_id, name, creator, now, 'custom', category))
+        # 添加创建者
+        conn.execute('INSERT INTO user_group_members VALUES (?,?,?)',
+                     (group_id, creator, now))
+        # 添加成员
+        for m in member_uids:
+            if not conn.execute('SELECT 1 FROM users WHERE uid=?', (m,)).fetchone():
+                continue
+            conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                         (group_id, m, now))
+        # 添加聊天室
+        for chat in chat_ids:
+            if isinstance(chat, dict):
+                chat_id = chat.get('chat_id', '')
+                chat_name = chat.get('chat_name', '')
+            else:
+                chat_id = chat
+                chat_name = chat
+            if chat_id:
+                conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                             (group_id, chat_id, chat_name))
+        conn.commit()
+        return jsonify({'message': '群组创建成功', 'group_id': group_id}), 201
+    except Exception as e:
+        return jsonify({'error': f'创建失败: {str(e)}'}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/user-groups/<group_id>', methods=['PUT'])
+@token_required
+def update_user_group(group_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['creator'] != uid:
+        return jsonify({'error': '无权修改'}), 403
+    
+    name = data.get('name', group['name'])
+    category = data.get('category', group['category'])
+    conn.execute('UPDATE user_groups SET name=?, category=? WHERE group_id=?',
+                 (name, category, group_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已更新'})
+
+@app.route('/api/user-groups/<group_id>', methods=['DELETE'])
+@token_required
+def delete_user_group(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['creator'] != uid:
+        return jsonify({'error': '无权删除'}), 403
+    
+    conn.execute('DELETE FROM user_groups WHERE group_id=?', (group_id,))
+    conn.execute('DELETE FROM user_group_members WHERE group_id=?', (group_id,))
+    conn.execute('DELETE FROM user_group_chats WHERE group_id=?', (group_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已删除'})
+
+# ---------- 群组详情（成员+聊天室） ----------
+@app.route('/api/user-groups/<group_id>/detail', methods=['GET'])
+@token_required
+def get_user_group_detail(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    
+    # 检查群组是否存在
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    
+    # 检查用户是否在群组中
+    if not conn.execute('SELECT 1 FROM user_group_members WHERE group_id=? AND uid=?',
+                        (group_id, uid)).fetchone():
+        return jsonify({'error': '无权访问'}), 403
+    
+    # 对于系统群组（即时聊天、私聊），动态计算成员
+    if group['group_type'] == 'system' and group['category'] == '即时聊天':
+        # 所有用户 - 好友 - 自己
+        friend_uids = [r['friend_uid'] for r in 
+                       conn.execute('SELECT friend_uid FROM friends WHERE uid=?', (uid,)).fetchall()]
+        if friend_uids:
+            placeholders = ','.join('?' * len(friend_uids))
+            members = conn.execute(f'''SELECT uid, name, role FROM users 
+                                       WHERE uid != ? AND uid NOT IN ({placeholders})
+                                       ORDER BY name''',
+                [uid] + friend_uids).fetchall()
+        else:
+            members = conn.execute('''SELECT uid, name, role FROM users 
+                                       WHERE uid != ?
+                                       ORDER BY name''', (uid,)).fetchall()
+        member_list = [{'uid': m['uid'], 'name': m['name'], 'role': m['role'], 'added_at': 0}
+                       for m in members]
+    elif group['group_type'] == 'system' and group['category'] == '私聊':
+        # 好友
+        members = conn.execute('''SELECT u.uid, u.name, u.role, f.created_at as added_at
+                                   FROM friends f
+                                   JOIN users u ON f.friend_uid = u.uid
+                                   WHERE f.uid=?
+                                   ORDER BY u.name''', (uid,)).fetchall()
+        member_list = [{'uid': m['uid'], 'name': m['name'], 'role': m['role'], 'added_at': m['added_at']}
+                       for m in members]
+    else:
+        # 普通群组，从表里取
+        members = conn.execute('''SELECT u.uid, u.name, u.role, gm.added_at
+                                   FROM user_group_members gm
+                                   JOIN users u ON gm.uid = u.uid
+                                   WHERE gm.group_id=?
+                                   ORDER BY u.name''', (group_id,)).fetchall()
+        member_list = [{'uid': m['uid'], 'name': m['name'], 'role': m['role'], 'added_at': m['added_at']}
+                       for m in members]
+    
+    # 获取群组中的聊天室
+    chats = conn.execute('''SELECT ugc.*, gc.name as chat_room_name
+                             FROM user_group_chats ugc
+                             LEFT JOIN groups_chat gc ON ugc.chat_id = gc.group_id
+                             WHERE ugc.group_id=?''', (group_id,)).fetchall()
+    chat_list = [{'chat_id': c['chat_id'], 'chat_name': c['chat_name'],
+                  'chat_room_name': c['chat_room_name'] or c['chat_name']}
+                 for c in chats]
+    
+    conn.close()
+    return jsonify({
+        'group_id': group['group_id'],
+        'name': group['name'],
+        'creator': group['creator'],
+        'created_at': group['created_at'],
+        'group_type': group['group_type'],
+        'category': group['category'],
+        'members': member_list,
+        'chats': chat_list
+    })
+
+# ---------- 群组聊天室管理 ----------
+@app.route('/api/user-groups/<group_id>/chats', methods=['POST'])
+@token_required
+def add_chat_to_group(group_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    chat_id = data.get('chat_id', '').strip()
+    chat_name = data.get('chat_name', '').strip()
+    
+    if not chat_id or not chat_name:
+        return jsonify({'error': '参数不全'}), 400
+    
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['group_type'] == 'system':
+        return jsonify({'error': '系统群组不可修改'}), 403
+    
+    try:
+        conn.execute('INSERT INTO user_group_chats VALUES (?,?,?)',
+                     (group_id, chat_id, chat_name))
+        conn.commit()
+        return jsonify({'message': '添加成功'}), 201
+    except Exception:
+        return jsonify({'error': '聊天室已存在'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/user-groups/<group_id>/chats/<chat_id>', methods=['DELETE'])
+@token_required
+def remove_chat_from_group(group_id, chat_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['group_type'] == 'system':
+        return jsonify({'error': '系统群组不可修改'}), 403
+    
+    conn.execute('DELETE FROM user_group_chats WHERE group_id=? AND chat_id=?',
+                 (group_id, chat_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已移除'})
+
+# ---------- 在群组内创建聊天室 ----------
+@app.route('/api/user-groups/<group_id>/create-chat', methods=['POST'])
+@token_required
+def create_chat_in_group(group_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': '聊天室名称不能为空'}), 400
+    
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    
+    try:
+        now = time.time()
+        chat_id = secrets.token_hex(8)
+        category = group.get('category', '自定义')
+        # 创建群聊
+        conn.execute('INSERT INTO groups_chat VALUES (?,?,?,?,?,?)',
+                     (chat_id, name, uid, now, 'custom', category))
+        # 加入创建者
+        conn.execute('INSERT INTO group_members VALUES (?,?,?,?)',
+                     (chat_id, uid, 'admin', now))
+        # 关联到群组
+        conn.execute('INSERT INTO user_group_chats VALUES (?,?,?)',
+                     (group_id, chat_id, name))
+        conn.commit()
+        return jsonify({'message': '聊天室创建成功', 'chat_id': chat_id}), 201
+    except Exception as e:
+        return jsonify({'error': f'创建失败: {str(e)}'}), 500
+    finally:
+        conn.close()
+
+# ---------- 群组成员管理 ----------
+@app.route('/api/user-groups/<group_id>/members', methods=['POST'])
+@token_required
+def add_member_to_group(group_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    member_uids = data.get('uids', [])
+    if not member_uids:
+        return jsonify({'error': '成员列表为空'}), 400
+    
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['group_type'] == 'system':
+        return jsonify({'error': '系统群组不可修改'}), 403
+    
+    now = time.time()
+    added = 0
+    for m in member_uids:
+        if conn.execute('SELECT 1 FROM users WHERE uid=?', (m,)).fetchone():
+            try:
+                conn.execute('INSERT INTO user_group_members VALUES (?,?,?)',
+                             (group_id, m, now))
+                added += 1
+            except Exception:
+                pass
+    conn.commit()
+    conn.close()
+    return jsonify({'message': f'添加了{added}个成员'})
+
+@app.route('/api/user-groups/<group_id>/members/<member_uid>', methods=['DELETE'])
+@token_required
+def remove_member_from_group(group_id, member_uid):
+    uid = g.current_user['uid']
+    conn = get_db()
+    group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
+    if not group:
+        return jsonify({'error': '群组不存在'}), 404
+    if group['group_type'] == 'system':
+        return jsonify({'error': '系统群组不可修改'}), 403
+    if member_uid == uid:
+        return jsonify({'error': '不能将自己移出群组'}), 400
+    
+    conn.execute('DELETE FROM user_group_members WHERE group_id=? AND uid=?',
+                 (group_id, member_uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已移除'})
+
+# ---------- 好友管理 ----------
+@app.route('/api/friends', methods=['GET'])
+@token_required
+def get_friends():
+    uid = g.current_user['uid']
+    conn = get_db()
+    friends = conn.execute('''SELECT u.uid, u.name, u.role, f.created_at
+                               FROM friends f
+                               JOIN users u ON f.friend_uid = u.uid
+                               WHERE f.uid=?
+                               ORDER BY u.name''', (uid,)).fetchall()
+    conn.close()
+    return jsonify([{'uid': f['uid'], 'name': f['name'],
+                     'role': f['role'], 'created_at': f['created_at']}
+                    for f in friends])
+
+@app.route('/api/friends/add', methods=['POST'])
+@token_required
+def add_friend():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    friend_uid = data.get('uid', '').strip()
+    if not friend_uid:
+        return jsonify({'error': '用户ID不能为空'}), 400
+    if friend_uid == uid:
+        return jsonify({'error': '不能添加自己为好友'}), 400
+    
+    conn = get_db()
+    if not conn.execute('SELECT 1 FROM users WHERE uid=?', (friend_uid,)).fetchone():
+        return jsonify({'error': '用户不存在'}), 404
+    
+    try:
+        now = time.time()
+        conn.execute('INSERT INTO friends VALUES (?,?,?)', (uid, friend_uid, now))
+        conn.commit()
+        return jsonify({'message': '添加好友成功'}), 201
+    except Exception:
+        return jsonify({'error': '已经是好友了'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/friends/remove', methods=['POST'])
+@token_required
+def remove_friend():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    friend_uid = data.get('uid', '').strip()
+    if not friend_uid:
+        return jsonify({'error': '用户ID不能为空'}), 400
+    
+    conn = get_db()
+    conn.execute('DELETE FROM friends WHERE uid=? AND friend_uid=?', (uid, friend_uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已删除好友'})
+
+# ---------- 系统默认群组自动创建 ----------
+def ensure_default_groups(uid):
+    conn = get_db()
+    try:
+        # 检查是否已有系统默认群组
+        existing = conn.execute('''SELECT COUNT(*) FROM user_groups g
+                                    JOIN user_group_members gm ON g.group_id = gm.group_id
+                                    WHERE gm.uid=? AND g.group_type='system' ''',
+                                (uid,)).fetchone()[0]
+        if existing >= 2:
+            return  # 已有默认群组
+        
+        now = time.time()
+        
+        # 检查并创建"即时聊天"群组
+        chat_group = conn.execute('''SELECT g.group_id FROM user_groups g
+                                      JOIN user_group_members gm ON g.group_id = gm.group_id
+                                      WHERE gm.uid=? AND g.category='即时聊天' AND g.group_type='system' ''',
+                                  (uid,)).fetchone()
+        if not chat_group:
+            group_id = 'sys_im_' + uid
+            conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
+                         (group_id, '即时聊天', 'system', now, 'system', '即时聊天'))
+            conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                         (group_id, uid, now))
+        
+        # 检查并创建"私聊"群组
+        private_group = conn.execute('''SELECT g.group_id FROM user_groups g
+                                         JOIN user_group_members gm ON g.group_id = gm.group_id
+                                         WHERE gm.uid=? AND g.category='私聊' AND g.group_type='system' ''',
+                                     (uid,)).fetchone()
+        if not private_group:
+            group_id = 'sys_private_' + uid
+            conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
+                         (group_id, '私聊', 'system', now, 'system', '私聊'))
+            conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                         (group_id, uid, now))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------- 群聊 ----------
 @app.route('/api/groups', methods=['GET'])
 @token_required
@@ -646,9 +1085,9 @@ def get_groups():
                              JOIN group_members gm ON g.group_id = gm.group_id
                              WHERE gm.uid = ?''', (uid,)).fetchall()
     conn.close()
-    return jsonify([{'group_id':g['group_id'],'name':g['name'],'creator':g['creator'],
-                     'created_at':g['created_at'],'group_type':g['group_type'],
-                     'category':g['category']} for g in groups])
+    return jsonify([{'group_id':gr['group_id'],'name':gr['name'],'creator':gr['creator'],
+                     'created_at':gr['created_at'],'group_type':gr['group_type'],
+                     'category':gr['category']} for gr in groups])
 
 @app.route('/api/groups', methods=['POST'])
 @token_required
@@ -687,9 +1126,12 @@ def get_group_messages(group_id):
     conn = get_db()
     if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?',(group_id,uid)).fetchone():
         return jsonify({'error':'无权访问'}),403
-    msgs = conn.execute('SELECT * FROM group_messages WHERE group_id=? ORDER BY timestamp',(group_id,)).fetchall()
+    msgs = conn.execute('''SELECT gm.*, u.name as sender_name 
+                            FROM group_messages gm
+                            JOIN users u ON gm.sender = u.uid
+                            WHERE gm.group_id=? ORDER BY gm.timestamp''', (group_id,)).fetchall()
     conn.close()
-    return jsonify([{'id':m['id'],'sender':m['sender'],'content':m['content'],
+    return jsonify([{'id':m['id'],'sender':m['sender'],'sender_name':m['sender_name'],'content':m['content'],
                      'msg_type':m['msg_type'],'file_path':m['file_path'],
                      'file_name':m['file_name'],'status':m['status'],
                      'timestamp':m['timestamp'],'revoked':m['revoked']} for m in msgs])

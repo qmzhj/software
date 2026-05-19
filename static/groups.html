@@ -1,370 +1,747 @@
 <!doctype html>
 <html lang="zh">
-  <head>
-    <meta charset="UTF-8" />
-    <title>群聊 - 校园通</title>
-    <style>
-      :root {
-        --primary: #4f46e5;
-        --bg: #f1f5f9;
-        --card: #fff;
-        --border: #e2e8f0;
-        --danger: #ef4444;
-      }
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      body {
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-        display: flex;
-        height: 100vh;
-        background: var(--bg);
-      }
-      .sidebar {
-        width: 280px;
-        background: var(--card);
-        border-right: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-      }
-      .sidebar-header {
-        padding: 20px;
-        font-weight: 700;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .sidebar-header button {
-        background: var(--primary);
-        color: white;
-        border: none;
-        padding: 6px 12px;
-        border-radius: 10px;
-        font-size: 13px;
-        cursor: pointer;
-      }
-      .group-cats {
-        display: flex;
-        flex-wrap: wrap;
-        padding: 10px;
-        gap: 6px;
-      }
-      .cat-tag {
-        padding: 4px 12px;
-        border-radius: 20px;
-        border: 1px solid var(--border);
-        cursor: pointer;
-        font-size: 13px;
-        background: white;
-      }
-      .cat-tag.active {
-        background: var(--primary);
-        color: white;
-      }
-      .group-list {
-        flex: 1;
-        overflow-y: auto;
-        padding: 8px;
-      }
-      .group-item {
-        display: flex;
-        align-items: center;
-        padding: 12px;
-        border-radius: 14px;
-        cursor: pointer;
-        margin-bottom: 4px;
-        transition: 0.2s;
-      }
-      .group-item:hover {
-        background: #eef2ff;
-      }
-      .group-item.active {
-        background: #e0e7ff;
-        border: 1px solid var(--primary);
-      }
-      .avatar-group {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #10b981, #34d399);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        margin-right: 12px;
-      }
-      .chat-area {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        background: var(--card);
-        margin: 10px;
-        border-radius: 20px;
-        overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-      }
-      .chat-header {
-        padding: 16px 24px;
-        border-bottom: 1px solid var(--border);
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-      }
-      .messages {
-        flex: 1;
-        padding: 20px 24px;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        background: #f9fafb;
-      }
-      .bubble {
-        max-width: 70%;
-        padding: 10px 16px;
-        border-radius: 18px;
-        font-size: 14px;
-        line-height: 1.5;
-        position: relative;
-      }
-      .bubble.sent {
-        align-self: flex-end;
-        background: linear-gradient(135deg, #4f46e5, #7c3aed);
-        color: white;
-        border-bottom-right-radius: 4px;
-      }
-      .bubble.received {
-        align-self: flex-start;
-        background: #e2e8f0;
-        color: #1e293b;
-        border-bottom-left-radius: 4px;
-      }
-      .sender-name {
-        font-weight: 600;
-        margin-bottom: 4px;
-        color: var(--primary);
-        font-size: 13px;
-      }
-      .bubble .time {
-        font-size: 10px;
-        opacity: 0.7;
-        margin-top: 4px;
-        text-align: right;
-      }
-      .input-bar {
-        display: flex;
-        padding: 16px;
-        border-top: 1px solid var(--border);
-        background: white;
-        align-items: center;
-        gap: 8px;
-      }
-      .input-bar input {
-        flex: 1;
-        padding: 10px 16px;
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        font-size: 14px;
-        outline: none;
-      }
-      .send-btn {
-        background: var(--primary);
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 36px;
-        height: 36px;
-        font-size: 18px;
-        cursor: pointer;
-      }
-      .leave-btn {
-        background: white;
-        border: 1px solid var(--danger);
-        color: var(--danger);
-        padding: 6px 12px;
-        border-radius: 8px;
-        cursor: pointer;
-        margin-left: 8px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <span>我的分组</span>
-        <button onclick="createGroupUI()">+ 新建</button>
-      </div>
-      <div class="group-cats" id="catTags"></div>
-      <div class="group-list" id="groupList"></div>
+<head>
+  <meta charset="UTF-8" />
+  <title>群组 - 校园通</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --bg: #f1f5f9;
+      --card: #fff;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --success: #10b981;
+      --text: #1e293b;
+      --text-muted: #64748b;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      display: flex;
+      height: 100vh;
+      background: var(--bg);
+    }
+    .sidebar {
+      width: 300px;
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      padding: 16px 18px;
+      font-weight: 700;
+      font-size: 15px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-header button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .sidebar-header .back-btn {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .group-list, .detail-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 8px;
+    }
+    .group-item, .member-item, .chat-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-bottom: 2px;
+      transition: 0.15s;
+    }
+    .group-item:hover, .member-item:hover, .chat-item:hover {
+      background: #eef2ff;
+    }
+    .group-item.active, .member-item.active, .chat-item.active {
+      background: #e0e7ff;
+      border: 1px solid var(--primary);
+    }
+    .avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; margin-right: 12px; flex-shrink: 0;
+      color: white; font-size: 16px;
+    }
+    .avatar-group { background: linear-gradient(135deg, #10b981, #34d399); }
+    .avatar-user { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+    .avatar-chat { background: linear-gradient(135deg, #f59e0b, #f97316); }
+    .item-info { flex: 1; min-width: 0; }
+    .item-name { font-weight: 600; font-size: 14px; color: var(--text); }
+    .item-sub {
+      font-size: 12px; color: var(--text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .item-count {
+      font-size: 11px; color: var(--text-muted);
+      background: var(--bg); padding: 2px 8px; border-radius: 10px;
+    }
+    .detail-section {
+      padding: 6px 0;
+    }
+    .detail-section-title {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      padding: 8px 12px 4px; text-transform: uppercase;
+    }
+    .chat-area {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--card); margin: 10px; border-radius: 20px;
+      overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .chat-header {
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      font-weight: 600; display: flex; align-items: center;
+    }
+    .messages {
+      flex: 1; padding: 20px 24px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 12px;
+      background: #f9fafb;
+    }
+    .bubble {
+      max-width: 70%; padding: 10px 16px; border-radius: 18px;
+      font-size: 14px; line-height: 1.5; word-break: break-word;
+    }
+    .bubble.sent {
+      align-self: flex-end;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white; border-bottom-right-radius: 4px;
+    }
+    .bubble.received {
+      align-self: flex-start;
+      background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 4px;
+    }
+    .sender-name { font-weight: 600; margin-bottom: 4px; color: var(--primary); font-size: 13px; }
+    .bubble .time { font-size: 10px; opacity: 0.7; margin-top: 4px; text-align: right; }
+    .input-bar {
+      display: flex; padding: 16px; border-top: 1px solid var(--border);
+      background: white; align-items: center; gap: 8px;
+    }
+    .input-bar input {
+      flex: 1; padding: 10px 16px; border: 1px solid var(--border);
+      border-radius: 24px; font-size: 14px; outline: none;
+    }
+    .input-bar input:focus { border-color: var(--primary); }
+    .send-btn {
+      background: var(--primary); color: white; border: none;
+      border-radius: 50%; width: 36px; height: 36px;
+      font-size: 18px; cursor: pointer;
+    }
+    .empty-state {
+      text-align: center; color: var(--text-muted); padding: 60px 20px;
+    }
+    .empty-state h3 { font-size: 18px; margin-bottom: 8px; }
+    .empty-state p { font-size: 14px; }
+    .toolbar {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .toolbar button {
+      padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: white; font-size: 12px; cursor: pointer; color: var(--text);
+    }
+    .toolbar button:hover { background: #eef2ff; }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: white; border-radius: 16px; padding: 24px;
+      width: 420px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
+    }
+    .modal h3 { margin-bottom: 16px; }
+    .modal input, .modal select {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: 8px; font-size: 14px; margin-bottom: 10px;
+    }
+    .modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    .modal .btn-row button {
+      padding: 8px 20px; border-radius: 10px; border: none;
+      font-size: 14px; cursor: pointer;
+    }
+    .modal .btn-primary { background: var(--primary); color: white; }
+    .modal .btn-cancel { background: var(--bg); color: var(--text); }
+    .modal .member-list-add {
+      max-height: 200px; overflow-y: auto; border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 10px;
+    }
+    .modal .member-list-add label {
+      display: flex; align-items: center; padding: 6px 10px;
+      font-size: 13px; cursor: pointer;
+    }
+    .modal .member-list-add label:hover { background: #f1f5f9; }
+    .modal .member-list-add input { width: auto; margin: 0 8px 0 0; }
+    .friend-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 10px; border-radius: 20px; font-size: 12px;
+      border: 1px solid var(--border); cursor: pointer; margin: 2px;
+    }
+    .friend-tag.is-friend { background: #dbeafe; border-color: var(--primary); color: var(--primary); }
+    .system-badge {
+      font-size: 11px; background: #e0e7ff; color: var(--primary);
+      padding: 1px 8px; border-radius: 8px; margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header" id="sidebarHeader">
+      <span id="sidebarTitle">📁 我的群组</span>
+      <span id="sidebarActions">
+        <button onclick="showCreateGroupModal()">+ 新建</button>
+      </span>
     </div>
-    <div class="chat-area">
-      <div class="chat-header" id="chatHeader">👥 选择一个分组</div>
-      <div class="messages" id="msgContainer">
-        <div style="text-align: center; color: #64748b; padding: 40px">
-          暂无消息
+    <div class="toolbar" id="detailToolbar" style="display:none">
+      <button onclick="showAddMemberModal()">+ 添加成员</button>
+      <button onclick="showCreateChatModal()">+ 创建聊天室</button>
+      <button onclick="showAddChatModal()">+ 关联聊天室</button>
+    </div>
+    <div class="group-list" id="groupList"></div>
+  </div>
+
+  <!-- Chat Area -->
+  <div class="chat-area">
+    <div class="chat-header" id="chatHeader">👥 选择一个群组</div>
+    <div class="messages" id="msgContainer">
+      <div class="empty-state" id="emptyState">
+        <h3>📁 群组管理</h3>
+        <p>左侧选择群组查看成员和聊天室</p>
+        <p style="margin-top:12px;font-size:12px;">
+          系统默认创建「即时聊天」和「私聊」群组<br>
+          可自行创建和管理自定义群组
+        </p>
+      </div>
+    </div>
+    <div class="input-bar" id="inputBar" style="display:none">
+      <input id="textInput" placeholder="输入消息..." disabled
+             onkeypress="if (event.key === 'Enter') sendCurrentMessage();" />
+      <button class="send-btn" onclick="sendCurrentMessage()">➤</button>
+    </div>
+  </div>
+
+  <!-- Modal: Create Group -->
+  <div class="modal-overlay" id="createGroupModal">
+    <div class="modal">
+      <h3>📁 新建群组</h3>
+      <input id="newGroupName" placeholder="群组名称" />
+      <select id="newGroupCategory">
+        <option value="自定义">自定义</option>
+        <option value="课程">课程</option>
+        <option value="比赛">比赛</option>
+        <option value="班级">班级</option>
+        <option value="年级">年级</option>
+        <option value="学院">学院</option>
+        <option value="办公">办公</option>
+      </select>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择成员（可选）:</p>
+      <div class="member-list-add" id="newGroupMembers"></div>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('createGroupModal')">取消</button>
+        <button class="btn-primary" onclick="createGroup()">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Member -->
+  <div class="modal-overlay" id="addMemberModal">
+    <div class="modal">
+      <h3>👤 添加成员</h3>
+      <div class="member-list-add" id="addMemberList"></div>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('addMemberModal')">取消</button>
+        <button class="btn-primary" onclick="addMembers()">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Chat -->
+  <div class="modal-overlay" id="addChatModal">
+    <div class="modal">
+      <h3>💬 关联聊天室</h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">
+        将已有群聊添加到当前群组
+      </p>
+      <div class="member-list-add" id="addChatList"></div>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('addChatModal')">取消</button>
+        <button class="btn-primary" onclick="addChatsToGroup()">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Chat Room -->
+  <div class="modal-overlay" id="createChatModal">
+    <div class="modal">
+      <h3>💬 创建聊天室</h3>
+      <input id="newChatName" placeholder="聊天室名称" />
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">
+        在当前群组内创建一个新的聊天室
+      </p>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('createChatModal')">取消</button>
+        <button class="btn-primary" onclick="createChatInGroup()">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    const currentUid = localStorage.getItem("uid");
+
+    // State
+    let viewState = "groups"; // "groups" | "group-detail"
+    let selectedGroup = null;     // current group object
+    let selectedMember = null;    // current member for private chat
+    let selectedChat = null;     // current chat room for group chat
+    let polling = null;
+    let allUsers = [];
+
+    // ---------- API helper ----------
+    async function api(url, opt = {}) {
+      const headers = { ...opt.headers };
+      if (token) headers["Authorization"] = token;
+      if (!(opt.body instanceof FormData)) headers["Content-Type"] = "application/json";
+      const res = await fetch(url, { ...opt, headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "请求失败");
+      return data;
+    }
+
+    function escapeHtml(t) {
+      const d = document.createElement("div");
+      d.textContent = t;
+      return d.innerHTML;
+    }
+
+    // ---------- Modal helpers ----------
+    function showModal(id) { document.getElementById(id).classList.add("active"); }
+    function closeModal(id) { document.getElementById(id).classList.remove("active"); }
+
+    // ---------- Group Level 1: List all groups ----------
+    async function loadGroups() {
+      try {
+        const groups = await api("/api/user-groups");
+        const list = document.getElementById("groupList");
+        list.innerHTML = groups.map(g => `
+          <div class="group-item" data-gid="${g.group_id}" onclick="enterGroup('${g.group_id}')">
+            <div class="avatar avatar-group">📁</div>
+            <div class="item-info">
+              <div class="item-name">
+                ${escapeHtml(g.name)}
+                ${g.group_type === 'system' ? '<span class="system-badge">系统</span>' : ''}
+              </div>
+              <div class="item-sub">
+                ${escapeHtml(g.category)} · ${g.member_count_except_self} 个成员 · ${g.chat_count} 个聊天室
+              </div>
+            </div>
+          </div>
+        `).join("");
+        if (groups.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>暂无群组，点击「新建」创建</p></div>';
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // ---------- Group Level 2: Enter group detail ----------
+    async function enterGroup(groupId) {
+      try {
+        const detail = await api(`/api/user-groups/${groupId}/detail`);
+        selectedGroup = detail;
+        selectedMember = null;
+        selectedChat = null;
+        viewState = "group-detail";
+        renderGroupDetail(detail);
+        showGroupDetailView(detail);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderGroupDetail(detail) {
+      // Sidebar: show members and chats
+      const list = document.getElementById("groupList");
+      let html = '<div class="detail-section">';
+
+      // Members section
+      html += '<div class="detail-section-title">👤 成员 (' + detail.members.length + ')</div>';
+      detail.members.forEach(m => {
+        const isMe = m.uid === currentUid;
+        const isSystemGroup = detail.group_type === 'system';
+        const isPrivateGroup = isSystemGroup && detail.category === '私聊';
+        const isFriend = isPrivateGroup; // 私聊群组内成员即为好友，即时聊天群组内为非好友
+        html += `
+          <div class="member-item" data-uid="${m.uid}">
+            <div class="avatar avatar-user">${escapeHtml(m.name.charAt(0))}</div>
+            <div class="item-info" style="cursor:${isMe ? 'default' : 'pointer'}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}')"`}>
+              <div class="item-name">
+                ${escapeHtml(m.name)} (${m.uid})
+                ${isMe ? '<span style="font-size:11px;color:var(--text-muted);margin-left:4px">(我)</span>' : ''}
+              </div>
+              <div class="item-sub">${m.role}</div>
+            </div>
+            ${!isMe && isSystemGroup ? `<span class="friend-tag ${isFriend ? 'is-friend' : ''}" onclick="event.stopPropagation();toggleFriend('${m.uid}','${escapeHtml(m.name)}')">${isFriend ? '❤️ 好友' : '🤍 加好友'}</span>` : ''}
+          </div>
+        `;
+      });
+
+      // Chats section
+      html += '<div class="detail-section-title">💬 聊天室 (' + detail.chats.length + ')</div>';
+      detail.chats.forEach(c => {
+        html += `
+          <div class="chat-item" data-chatid="${c.chat_id}" onclick="enterChatRoom('${c.chat_id}','${escapeHtml(c.chat_name)}')">
+            <div class="avatar avatar-chat">#</div>
+            <div class="item-info">
+              <div class="item-name">${escapeHtml(c.chat_name)}</div>
+            </div>
+          </div>
+        `;
+      });
+
+      html += '</div>';
+      list.innerHTML = html;
+    }
+
+    function showGroupDetailView(detail) {
+      // Update header
+      document.getElementById("sidebarTitle").textContent = "📁 " + detail.name;
+      document.getElementById("sidebarActions").innerHTML =
+        `<button class="back-btn" onclick="backToGroups()">← 返回</button>`;
+      document.getElementById("detailToolbar").style.display = "flex";
+
+      // Show group info in right panel
+      const container = document.getElementById("msgContainer");
+      container.innerHTML = `
+        <div class="empty-state">
+          <h3>📁 ${escapeHtml(detail.name)}</h3>
+          <p>分类: ${detail.category} ${detail.group_type === 'system' ? '· 系统群组' : ''}</p>
+          <p>成员: ${detail.members.length} 人 · 聊天室: ${detail.chats.length} 个</p>
+          <p style="margin-top:20px;font-size:13px;color:var(--text-muted);">
+            点击左侧成员开始私聊 · 点击聊天室进入群聊
+          </p>
         </div>
-      </div>
-      <div class="input-bar">
-        <input
-          id="textInput"
-          placeholder="输入群消息..."
-          disabled
-          onkeypress="if (event.key === 'Enter') sendText();"
-        />
-        <button class="send-btn" onclick="sendText()">➤</button>
-        <button class="leave-btn" id="leaveBtn" onclick="leaveGroup()" disabled>
-          退出群聊
-        </button>
-      </div>
-    </div>
-    <script>
-      let token = localStorage.getItem("token"),
-        currentUid = localStorage.getItem("uid"),
-        selectedGroup = null,
-        polling,
-        filterCat = "all";
-      async function api(url, opt = {}) {
-        const headers = { ...opt.headers };
-        if (token) headers["Authorization"] = token;
-        if (!(opt.body instanceof FormData))
-          headers["Content-Type"] = "application/json";
-        const res = await fetch(url, { ...opt, headers });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "请求失败");
-        return data;
-      }
-      function loadGroups() {
-        api("/api/groups").then((groups) => {
-          const cats = [
-            "all",
-            "好友分组",
-            "课程分组",
-            "即时聊天",
-          ];
-          document.getElementById("catTags").innerHTML = cats
-            .map(
-              (c) =>
-                `<span class="cat-tag ${filterCat === c ? "active" : ""}" onclick="filterCat='${c}';loadGroups()">${c === "all" ? "全部" : c}</span>`,
-            )
-            .join("");
-          const filtered =
-            filterCat === "all"
-              ? groups
-              : groups.filter((g) => g.category === filterCat);
-          document.getElementById("groupList").innerHTML = filtered
-            .map(
-              (g) =>
-                `<div class="group-item" data-gid="${g.group_id}" onclick="selectGroup('${g.group_id}','${escapeHtml(g.name)}')"><div class="avatar-group">👥</div><div style="flex:1"><div style="font-weight:600">${escapeHtml(g.name)}</div><div style="font-size:12px;color:#64748b">${g.category}</div></div></div>`,
-            )
-            .join("");
-        });
-      }
-      function selectGroup(id, name) {
-        document
-          .querySelectorAll(".group-item")
-          .forEach((el) => el.classList.remove("active"));
-        document.querySelector(`[data-gid="${id}"]`).classList.add("active");
-        selectedGroup = id;
-        document.getElementById("chatHeader").innerHTML =
-          `👥 ${escapeHtml(name)}`;
-        document.getElementById("textInput").disabled = false;
-        document.getElementById("leaveBtn").disabled = false;
-        loadMessages();
-        if (polling) clearInterval(polling);
-        polling = setInterval(loadMessages, 2000);
-      }
-      function loadMessages() {
-        if (!selectedGroup) return;
-        api(`/api/groups/${selectedGroup}/messages`).then((msgs) => {
-          const container = document.getElementById("msgContainer");
-          container.innerHTML = msgs
-            .map((m) => {
-              const isMe = m.sender === currentUid,
-                cls = isMe ? "sent" : "received";
-              let content = "";
-              if (m.revoked) {
-                content =
-                  '<div style="font-style:italic;opacity:.6">已撤回</div>';
-              } else if (m.msg_type === "image") {
-                content = `<img src="${m.file_path}" style="max-width:200px;max-height:180px;border-radius:12px;">`;
-              } else if (m.msg_type === "file") {
-                content = `<a href="${m.file_path}" download="${m.file_name}">📎 ${m.file_name}</a>`;
-              } else {
-                content = escapeHtml(m.content);
-              }
-              const time = new Date(m.timestamp * 1000).toLocaleTimeString(
-                "zh-CN",
-                { hour: "2-digit", minute: "2-digit" },
-              );
-              return `<div class="bubble ${cls}">${!isMe ? `<div class="sender-name">${m.sender}</div>` : ""}<div>${content}</div><div class="time">${time}</div></div>`;
-            })
-            .join("");
-          container.scrollTop = container.scrollHeight;
-        });
-      }
-      function sendText() {
-        const input = document.getElementById("textInput");
-        const text = input.value.trim();
-        if (!text || !selectedGroup) return;
-        api(`/api/groups/${selectedGroup}/send`, {
+      `;
+      document.getElementById("chatHeader").textContent = "📁 " + detail.name;
+      document.getElementById("inputBar").style.display = "none";
+      if (polling) { clearInterval(polling); polling = null; }
+    }
+
+    function backToGroups() {
+      viewState = "groups";
+      selectedGroup = null;
+      selectedMember = null;
+      selectedChat = null;
+      document.getElementById("sidebarTitle").textContent = "📁 我的群组";
+      document.getElementById("sidebarActions").innerHTML = `<button onclick="showCreateGroupModal()">+ 新建</button>`;
+      document.getElementById("detailToolbar").style.display = "none";
+      document.getElementById("chatHeader").textContent = "👥 选择一个群组";
+      document.getElementById("inputBar").style.display = "none";
+      if (polling) { clearInterval(polling); polling = null; }
+      document.getElementById("msgContainer").innerHTML = `
+        <div class="empty-state">
+          <h3>📁 群组管理</h3>
+          <p>左侧选择群组查看成员和聊天室</p>
+          <p style="margin-top:12px;font-size:12px;">
+            系统默认创建「即时聊天」和「私聊」群组<br>
+            可自行创建和管理自定义群组
+          </p>
+        </div>
+      `;
+      loadGroups();
+    }
+
+    // ---------- Private Chat (1-on-1) ----------
+    let privateChatPeer = null;
+    let privateChatPeerName = "";
+
+    async function startPrivateChat(uid, name) {
+      privateChatPeer = uid;
+      privateChatPeerName = name;
+      selectedMember = uid;
+      selectedChat = null;
+      document.getElementById("chatHeader").textContent = "💬 " + escapeHtml(name);
+      document.getElementById("textInput").disabled = false;
+      document.getElementById("textInput").placeholder = "输入消息...";
+      document.getElementById("inputBar").style.display = "flex";
+      loadPrivateMessages();
+      if (polling) clearInterval(polling);
+      polling = setInterval(loadPrivateMessages, 2000);
+    }
+
+    async function loadPrivateMessages() {
+      if (!privateChatPeer) return;
+      try {
+        const msgs = await api("/api/messages?with=" + privateChatPeer);
+        const container = document.getElementById("msgContainer");
+        container.innerHTML = msgs.map(m => {
+          const isMe = m.sender === currentUid;
+          const cls = isMe ? "sent" : "received";
+          let content = m.revoked
+            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
+            : m.msg_type === "image"
+              ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
+              : m.msg_type === "file"
+                ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
+                : escapeHtml(m.content || "");
+          const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
+            { hour: "2-digit", minute: "2-digit" });
+          return '<div class="bubble ' + cls + '"><div>' + content + '</div><div class="time">' + time + '</div></div>';
+        }).join("");
+        if (msgs.length === 0) {
+          container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(privateChatPeerName) + ' 聊天吧</p></div>';
+        }
+        container.scrollTop = container.scrollHeight;
+      } catch (e) { console.error(e); }
+    }
+
+    // ---------- Group Chat Room ----------
+    let currentChatRoom = null;
+    let currentChatRoomName = "";
+
+    async function enterChatRoom(chatId, name) {
+      currentChatRoom = chatId;
+      currentChatRoomName = name;
+      selectedChat = chatId;
+      selectedMember = null;
+      document.getElementById("chatHeader").textContent = "# " + escapeHtml(name);
+      document.getElementById("textInput").disabled = false;
+      document.getElementById("textInput").placeholder = "输入群消息...";
+      document.getElementById("inputBar").style.display = "flex";
+      loadGroupMessages();
+      if (polling) clearInterval(polling);
+      polling = setInterval(loadGroupMessages, 2000);
+
+      // Show group members who are in this chat
+      const msgContainer = document.getElementById("msgContainer");
+      msgContainer.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
+    }
+
+    async function loadGroupMessages() {
+      if (!currentChatRoom) return;
+      try {
+        const msgs = await api("/api/groups/" + currentChatRoom + "/messages");
+        const container = document.getElementById("msgContainer");
+        container.innerHTML = msgs.map(m => {
+          const isMe = m.sender === currentUid;
+          const cls = isMe ? "sent" : "received";
+          let content = m.revoked
+            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
+            : m.msg_type === "image"
+              ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
+              : m.msg_type === "file"
+                ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
+                : escapeHtml(m.content || "");
+          const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
+            { hour: "2-digit", minute: "2-digit" });
+          return '<div class="bubble ' + cls + '">'
+            + (!isMe ? '<div class="sender-name">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
+            + '<div>' + content + '</div><div class="time">' + time + '</div></div>';
+        }).join("");
+        if (msgs.length === 0) {
+          container.innerHTML = '<div class="empty-state"><p>暂无消息，发送第一条吧</p></div>';
+        }
+        container.scrollTop = container.scrollHeight;
+      } catch (e) { console.error(e); }
+    }
+
+    // ---------- Send message (private or group) ----------
+    function sendCurrentMessage() {
+      const input = document.getElementById("textInput");
+      const text = input.value.trim();
+      if (!text) return;
+
+      if (currentChatRoom) {
+        // Send group message
+        api("/api/groups/" + currentChatRoom + "/send", {
           method: "POST",
-          body: JSON.stringify({ content: text }),
+          body: JSON.stringify({ content: text })
         }).then(() => {
           input.value = "";
-          loadMessages();
-        });
-      }
-      function createGroupUI() {
-        const name = prompt("群聊名称:");
-        if (!name) return;
-        const membersStr = prompt("成员学工号(逗号分隔):");
-        if (!membersStr) return;
-        const members = membersStr
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const category = prompt(
-          "分类(课程群/比赛群/班级群/年级群/学院群/办公群):",
-          "办公群",
-        );
-        api("/api/groups", {
+          loadGroupMessages();
+        }).catch(e => console.error(e));
+      } else if (privateChatPeer) {
+        // Send private message
+        api("/api/send", {
           method: "POST",
-          body: JSON.stringify({ name, members, category }),
-        }).then((d) => {
-          alert(d.message);
-          loadGroups();
+          body: JSON.stringify({ receiver: privateChatPeer, content: text })
+        }).then(() => {
+          input.value = "";
+          loadPrivateMessages();
+        }).catch(e => console.error(e));
+      }
+    }
+
+    // ---------- Load all users ----------
+    async function loadAllUsers() {
+      try {
+        allUsers = await api("/api/users");
+      } catch (e) { console.error(e); }
+    }
+
+    // ---------- Create Group ----------
+    async function showCreateGroupModal() {
+      await loadAllUsers();
+      const list = document.getElementById("newGroupMembers");
+      list.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
+        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+      ).join("");
+      document.getElementById("newGroupName").value = "";
+      showModal("createGroupModal");
+    }
+
+    async function createGroup() {
+      const name = document.getElementById("newGroupName").value.trim();
+      if (!name) { alert("请输入群组名称"); return; }
+      const category = document.getElementById("newGroupCategory").value;
+      const checks = document.querySelectorAll("#newGroupMembers input:checked");
+      const members = Array.from(checks).map(c => c.value);
+      try {
+        await api("/api/user-groups", {
+          method: "POST",
+          body: JSON.stringify({ name, category, members })
         });
-      }
-      async function leaveGroup() {
-        if (!selectedGroup) return;
-        if (!confirm("确定退出？")) return;
-        api(`/api/groups/${selectedGroup}/leave`, { method: "POST" }).then(
-          (d) => {
-            alert(d.message);
-            selectedGroup = null;
-            loadGroups();
-            document.getElementById("chatHeader").innerHTML = "👥 选择一个群聊";
-            document.getElementById("textInput").disabled = true;
-            document.getElementById("leaveBtn").disabled = true;
-          },
-        );
-      }
-      function escapeHtml(t) {
-        const d = document.createElement("div");
-        d.textContent = t;
-        return d.innerHTML;
-      }
-      window.onload = function () {
-        if (!localStorage.getItem("token")) {
-          location.href = "/";
-          return;
-        }
+        closeModal("createGroupModal");
         loadGroups();
-      };
-    </script>
-  </body>
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    // ---------- Add Members to Group ----------
+    async function showAddMemberModal() {
+      if (!selectedGroup) return;
+      await loadAllUsers();
+      const currentMemberUids = selectedGroup.members.map(m => m.uid);
+      const available = allUsers.filter(u => !currentMemberUids.includes(u.uid));
+      const list = document.getElementById("addMemberList");
+      list.innerHTML = available.map(u =>
+        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+      ).join("");
+      if (available.length === 0) {
+        list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">所有用户已在群组中</p>';
+      }
+      showModal("addMemberModal");
+    }
+
+    async function addMembers() {
+      if (!selectedGroup) return;
+      const checks = document.querySelectorAll("#addMemberList input:checked");
+      const uids = Array.from(checks).map(c => c.value);
+      if (uids.length === 0) { alert("请选择成员"); return; }
+      try {
+        await api("/api/user-groups/" + selectedGroup.group_id + "/members", {
+          method: "POST",
+          body: JSON.stringify({ uids })
+        });
+        closeModal("addMemberModal");
+        enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Add Chat Room to Group ----------
+    async function showAddChatModal() {
+      if (!selectedGroup) return;
+      try {
+        // Get existing group chats that the user is in
+        const groupChats = await api("/api/groups");
+        const existingChatIds = selectedGroup.chats.map(c => c.chat_id);
+        const available = groupChats.filter(g => !existingChatIds.includes(g.group_id));
+        const list = document.getElementById("addChatList");
+        list.innerHTML = available.map(g =>
+          '<label><input type="checkbox" data-chatid="' + g.group_id
+          + '" data-name="' + escapeHtml(g.name) + '" /> '
+          + escapeHtml(g.name) + '</label>'
+        ).join("");
+        if (available.length === 0) {
+          list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">没有可添加的聊天室</p>';
+        }
+        showModal("addChatModal");
+      } catch (e) { console.error(e); }
+    }
+
+    async function addChatsToGroup() {
+      if (!selectedGroup) return;
+      const checks = document.querySelectorAll("#addChatList input:checked");
+      const chats = Array.from(checks).map(c => ({
+        chat_id: c.dataset.chatid,
+        chat_name: c.dataset.name
+      }));
+      if (chats.length === 0) { alert("请选择聊天室"); return; }
+      try {
+        for (const chat of chats) {
+          await api("/api/user-groups/" + selectedGroup.group_id + "/chats", {
+            method: "POST",
+            body: JSON.stringify({ chat_id: chat.chat_id, chat_name: chat.chat_name })
+          });
+        }
+        closeModal("addChatModal");
+        enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Create Chat Room in Group ----------
+    async function showCreateChatModal() {
+      if (!selectedGroup) return;
+      document.getElementById("newChatName").value = "";
+      showModal("createChatModal");
+    }
+
+    async function createChatInGroup() {
+      if (!selectedGroup) return;
+      const name = document.getElementById("newChatName").value.trim();
+      if (!name) { alert("请输入聊天室名称"); return; }
+      try {
+        await api("/api/user-groups/" + selectedGroup.group_id + "/create-chat", {
+          method: "POST",
+          body: JSON.stringify({ name })
+        });
+        closeModal("createChatModal");
+        enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Friend Management (for system groups) ----------
+    async function toggleFriend(uid, name) {
+      try {
+        const friends = await api("/api/friends");
+        const isFriend = friends.some(f => f.uid === uid);
+        if (isFriend) {
+          await api("/api/friends/remove", { method: "POST", body: JSON.stringify({ uid }) });
+        } else {
+          await api("/api/friends/add", { method: "POST", body: JSON.stringify({ uid }) });
+        }
+        // Refresh group detail if in one
+        if (selectedGroup) enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Init ----------
+    window.onload = function() {
+      if (!localStorage.getItem("token")) { location.href = "/"; return; }
+      loadGroups();
+    };
+  </script>
+</body>
 </html>
