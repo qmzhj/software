@@ -72,6 +72,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS friends
                  (uid TEXT, friend_uid TEXT, created_at REAL,
                   PRIMARY KEY(uid, friend_uid))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS lesson
+                 (lesson_id TEXT PRIMARY KEY, lesson_name TEXT, teacher_uid TEXT,
+                  schedule_weekday TEXT, schedule_period TEXT, schedule_weeks TEXT,
+                  location TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS lesson_stu
+                 (lesson_id TEXT, stu_uid TEXT,
+                  PRIMARY KEY(lesson_id, stu_uid))''')
     conn.commit()
     _seed_data(conn)
     conn.close()
@@ -101,7 +108,37 @@ def _load_users_from_json(filepath):
     except Exception as e:
         print(f"加载用户数据时出错: {e}")
         return None
-    
+
+def _load_lessons_from_json(filepath, conn):
+    """
+    从lessons.json加载课程数据，自动生成课程uid，插入到lesson和lesson_stu表
+    """
+    try:
+        if not os.path.exists(filepath):
+            print(f"警告: 文件 {filepath} 不存在")
+            return
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        c = conn.cursor()
+        for lesson in data:
+            lesson_id = 'lesson_' + secrets.token_hex(8)
+            lesson_name = lesson.get('lesson_name', '')
+            teacher_uid = lesson.get('teacher_uid', '')
+            schedule_weekday = lesson.get('schedule_weekday', '')
+            schedule_period = lesson.get('schedule_period', '')
+            schedule_weeks = lesson.get('schedule_weeks', '')
+            location = lesson.get('location', '')
+            stu_uids = lesson.get('stu_uids', [])
+            c.execute('INSERT INTO lesson VALUES (?,?,?,?,?,?,?)',
+                      (lesson_id, lesson_name, teacher_uid,
+                       schedule_weekday, schedule_period, schedule_weeks, location))
+            for stu_uid in stu_uids:
+                c.execute('INSERT OR IGNORE INTO lesson_stu VALUES (?,?)',
+                          (lesson_id, str(stu_uid)))
+        print(f"已从 {filepath} 导入 {len(data)} 门课程数据")
+    except Exception as e:
+        print(f"加载课程数据时出错: {e}")
+
 def _seed_data(conn):
     c = conn.cursor()
     if c.execute('SELECT COUNT(*) FROM classrooms').fetchone()[0] == 0:
@@ -138,6 +175,8 @@ def _seed_data(conn):
         users_data = _load_users_from_json('users.json')
         if users_data:
             c.executemany('INSERT INTO users (uid,name,password,role,locked,unlock_time, login_fails,registed,phone) VALUES (?,?,?,?,?,?,?,?,?)', users_data)
+    if c.execute('SELECT COUNT(*) FROM lesson').fetchone()[0] == 0:
+        _load_lessons_from_json('lessons.json', conn)
     conn.commit()
 
 # ---------- 辅助函数 ----------
@@ -667,12 +706,43 @@ def get_user_groups():
     
     result = []
     for grp in groups:
-        # 获取群组的聊天室数量
-        chat_count = conn.execute('SELECT COUNT(*) FROM user_group_chats WHERE group_id=?',
-                                  (grp['group_id'],)).fetchone()[0]
-        # 获取群组的成员数量（排除自己）
-        member_count = conn.execute('SELECT COUNT(*) FROM user_group_members WHERE group_id=? AND uid!=?',
-                                    (grp['group_id'], uid)).fetchone()[0]
+        # 获取群组的聊天室数量，系统群组需动态计算
+        if grp['group_type'] == 'system' and grp['category'] == '课程':
+            user = conn.execute('SELECT role FROM users WHERE uid=?', (uid,)).fetchone()
+            if user and user['role'] == 'student':
+                chat_count = conn.execute(
+                    'SELECT COUNT(*) FROM lesson_stu WHERE stu_uid=?', (uid,)
+                ).fetchone()[0]
+            elif user and user['role'] == 'teacher':
+                chat_count = conn.execute(
+                    'SELECT COUNT(*) FROM lesson WHERE teacher_uid=?', (uid,)
+                ).fetchone()[0]
+            else:
+                chat_count = 0
+        else:
+            chat_count = conn.execute('SELECT COUNT(*) FROM user_group_chats WHERE group_id=?',
+                                      (grp['group_id'],)).fetchone()[0]
+        # 获取群组的成员数量（排除自己），系统群组需动态计算
+        if grp['group_type'] == 'system' and grp['category'] == '即时聊天':
+            friend_uids = [r[0] for r in conn.execute('SELECT friend_uid FROM friends WHERE uid=?', (uid,)).fetchall()]
+            if friend_uids:
+                placeholders = ','.join('?' * len(friend_uids))
+                member_count = conn.execute(
+                    f'SELECT COUNT(*) FROM users WHERE uid != ? AND uid NOT IN ({placeholders})',
+                    [uid] + friend_uids
+                ).fetchone()[0]
+            else:
+                member_count = conn.execute(
+                    'SELECT COUNT(*) FROM users WHERE uid != ?', (uid,)
+                ).fetchone()[0]
+        elif grp['group_type'] == 'system' and grp['category'] == '私聊':
+            member_count = conn.execute(
+                'SELECT COUNT(*) FROM friends WHERE uid=?', (uid,)
+            ).fetchone()[0]
+        
+        else:
+            member_count = conn.execute('SELECT COUNT(*) FROM user_group_members WHERE group_id=? AND uid!=?',
+                                        (grp['group_id'], uid)).fetchone()[0]
         result.append({
             'group_id': grp['group_id'],
             'name': grp['name'],
@@ -1041,11 +1111,11 @@ def ensure_default_groups(uid):
                                     JOIN user_group_members gm ON g.group_id = gm.group_id
                                     WHERE gm.uid=? AND g.group_type='system' ''',
                                 (uid,)).fetchone()[0]
-        if existing >= 2:
-            return  # 已有默认群组
-        
+        if existing >= 3:
+            return  # 已有所有系统默认群组
+
         now = time.time()
-        
+
         # 检查并创建"即时聊天"群组
         chat_group = conn.execute('''SELECT g.group_id FROM user_groups g
                                       JOIN user_group_members gm ON g.group_id = gm.group_id
@@ -1057,7 +1127,7 @@ def ensure_default_groups(uid):
                          (group_id, '即时聊天', 'system', now, 'system', '即时聊天'))
             conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
                          (group_id, uid, now))
-        
+
         # 检查并创建"私聊"群组
         private_group = conn.execute('''SELECT g.group_id FROM user_groups g
                                          JOIN user_group_members gm ON g.group_id = gm.group_id
@@ -1069,7 +1139,47 @@ def ensure_default_groups(uid):
                          (group_id, '私聊', 'system', now, 'system', '私聊'))
             conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
                          (group_id, uid, now))
-        
+
+        # 检查并创建"课程"群组
+        course_group = conn.execute('''SELECT g.group_id FROM user_groups g
+                                        JOIN user_group_members gm ON g.group_id = gm.group_id
+                                        WHERE gm.uid=? AND g.category='课程' AND g.group_type='system' ''',
+                                    (uid,)).fetchone()
+        if not course_group:
+            # 查找用户参与的课程（学生从lesson_stu，教师从lesson）
+            user = conn.execute('SELECT role FROM users WHERE uid=?', (uid,)).fetchone()
+            if user:
+                if user['role'] == 'student':
+                    courses = conn.execute('''SELECT l.* FROM lesson l
+                                               JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
+                                               WHERE ls.stu_uid=?''', (uid,)).fetchall()
+                elif user['role'] == 'teacher':
+                    courses = conn.execute('SELECT * FROM lesson WHERE teacher_uid=?',
+                                           (uid,)).fetchall()
+                else:
+                    courses = []
+
+                if courses:
+                    course_group_id = 'sys_courses_' + uid
+                    conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
+                                 (course_group_id, '课程', 'system', now, 'system', '课程'))
+                    conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                                 (course_group_id, uid, now))
+
+                    for course in courses:
+                        lesson_id = course['lesson_id']
+                        chat_id = 'chat_' + lesson_id
+                        chat_name = course['lesson_name']
+                        # 创建该课程的聊天室（共享，仅供该课程用户使用）
+                        conn.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
+                                     (chat_id, chat_name + '聊天室', 'system', now, 'custom', '课程'))
+                        # 将当前用户加入该聊天室
+                        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?)',
+                                     (chat_id, uid, 'member', now))
+                        # 关联聊天室到课程群组
+                        conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                                     (course_group_id, chat_id, chat_name))
+
         conn.commit()
     finally:
         conn.close()

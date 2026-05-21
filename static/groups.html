@@ -256,6 +256,8 @@
       </select>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择成员（可选）:</p>
       <div class="member-list-add" id="newGroupMembers"></div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;margin-top:8px;">选择聊天室（可选）:</p>
+      <div class="member-list-add" id="newGroupChats"></div>
       <div class="btn-row">
         <button class="btn-cancel" onclick="closeModal('createGroupModal')">取消</button>
         <button class="btn-primary" onclick="createGroup()">创建</button>
@@ -344,7 +346,7 @@
         const groups = await api("/api/user-groups");
         const list = document.getElementById("groupList");
         list.innerHTML = groups.map(g => `
-          <div class="group-item" data-gid="${g.group_id}" onclick="enterGroup('${g.group_id}')">
+          <div class="group-item" data-gid="${g.group_id}" onclick="enterGroup('${g.group_id}', this)">
             <div class="avatar avatar-group">📁</div>
             <div class="item-info">
               <div class="item-name">
@@ -366,8 +368,10 @@
     }
 
     // ---------- Group Level 2: Enter group detail ----------
-    async function enterGroup(groupId) {
+    async function enterGroup(groupId, el) {
       try {
+        document.querySelectorAll('.group-item').forEach(i => i.classList.remove('active'));
+        if (el) el.classList.add('active');
         const detail = await api(`/api/user-groups/${groupId}/detail`);
         selectedGroup = detail;
         selectedMember = null;
@@ -393,9 +397,9 @@
         const isPrivateGroup = isSystemGroup && detail.category === '私聊';
         const isFriend = isPrivateGroup; // 私聊群组内成员即为好友，即时聊天群组内为非好友
         html += `
-          <div class="member-item" data-uid="${m.uid}">
+          <div class="member-item" data-uid="${m.uid}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}', this)"`}>
             <div class="avatar avatar-user">${escapeHtml(m.name.charAt(0))}</div>
-            <div class="item-info" style="cursor:${isMe ? 'default' : 'pointer'}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}')"`}>
+            <div class="item-info" style="cursor:${isMe ? 'default' : 'pointer'}">
               <div class="item-name">
                 ${escapeHtml(m.name)} (${m.uid})
                 ${isMe ? '<span style="font-size:11px;color:var(--text-muted);margin-left:4px">(我)</span>' : ''}
@@ -411,7 +415,7 @@
       html += '<div class="detail-section-title">💬 聊天室 (' + detail.chats.length + ')</div>';
       detail.chats.forEach(c => {
         html += `
-          <div class="chat-item" data-chatid="${c.chat_id}" onclick="enterChatRoom('${c.chat_id}','${escapeHtml(c.chat_name)}')">
+          <div class="chat-item" data-chatid="${c.chat_id}" onclick="enterChatRoom('${c.chat_id}','${escapeHtml(c.chat_name)}', this)">
             <div class="avatar avatar-chat">#</div>
             <div class="item-info">
               <div class="item-name">${escapeHtml(c.chat_name)}</div>
@@ -449,6 +453,9 @@
     }
 
     function backToGroups() {
+      document.querySelectorAll('.group-item').forEach(i => i.classList.remove('active'));
+      document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
+      document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
       viewState = "groups";
       selectedGroup = null;
       selectedMember = null;
@@ -476,7 +483,9 @@
     let privateChatPeer = null;
     let privateChatPeerName = "";
 
-    async function startPrivateChat(uid, name) {
+    async function startPrivateChat(uid, name, el) {
+      document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
+      if (el) el.classList.add('active');
       privateChatPeer = uid;
       privateChatPeerName = name;
       selectedMember = uid;
@@ -520,7 +529,10 @@
     let currentChatRoom = null;
     let currentChatRoomName = "";
 
-    async function enterChatRoom(chatId, name) {
+    async function enterChatRoom(chatId, name, el) {
+      document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+      if (el) el.classList.add('active');
+      document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
       currentChatRoom = chatId;
       currentChatRoomName = name;
       selectedChat = chatId;
@@ -603,10 +615,25 @@
     // ---------- Create Group ----------
     async function showCreateGroupModal() {
       await loadAllUsers();
-      const list = document.getElementById("newGroupMembers");
-      list.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
+      const memberList = document.getElementById("newGroupMembers");
+      memberList.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
         '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
       ).join("");
+
+      // 加载可选聊天室
+      try {
+        const groupChats = await api("/api/groups");
+        const chatList = document.getElementById("newGroupChats");
+        chatList.innerHTML = groupChats.map(g =>
+          '<label><input type="checkbox" data-chatid="' + g.group_id + '" data-name="' + escapeHtml(g.name) + '" /> ' + escapeHtml(g.name) + '</label>'
+        ).join("");
+        if (groupChats.length === 0) {
+          chatList.innerHTML = '<p style="padding:8px;color:var(--text-muted);font-size:13px;">暂无可用聊天室</p>';
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
       document.getElementById("newGroupName").value = "";
       showModal("createGroupModal");
     }
@@ -615,12 +642,17 @@
       const name = document.getElementById("newGroupName").value.trim();
       if (!name) { alert("请输入群组名称"); return; }
       const category = document.getElementById("newGroupCategory").value;
-      const checks = document.querySelectorAll("#newGroupMembers input:checked");
-      const members = Array.from(checks).map(c => c.value);
+      const memberChecks = document.querySelectorAll("#newGroupMembers input:checked");
+      const members = Array.from(memberChecks).map(c => c.value);
+      const chatChecks = document.querySelectorAll("#newGroupChats input:checked");
+      const chats = Array.from(chatChecks).map(c => ({
+        chat_id: c.dataset.chatid,
+        chat_name: c.dataset.name
+      }));
       try {
         await api("/api/user-groups", {
           method: "POST",
-          body: JSON.stringify({ name, category, members })
+          body: JSON.stringify({ name, category, members, chats })
         });
         closeModal("createGroupModal");
         loadGroups();
