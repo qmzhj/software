@@ -110,8 +110,14 @@
     }
     .chat-header {
       padding: 16px 24px; border-bottom: 1px solid var(--border);
-      font-weight: 600; display: flex; align-items: center;
+      font-weight: 600; display: flex; align-items: center; justify-content: space-between;
     }
+    .chat-header .detail-btn {
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 4px 12px; font-size: 13px; cursor: pointer; color: var(--text);
+      font-weight: 500;
+    }
+    .chat-header .detail-btn:hover { background: #eef2ff; }
     .messages {
       flex: 1; padding: 20px 24px; overflow-y: auto;
       display: flex; flex-direction: column; gap: 12px;
@@ -297,12 +303,96 @@
     <div class="modal">
       <h3>💬 创建聊天室</h3>
       <input id="newChatName" placeholder="聊天室名称" />
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">
-        在当前群组内创建一个新的聊天室
-      </p>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择成员（可选，范围为所有用户）:</p>
+      <div class="member-list-add" id="newChatMembers"></div>
       <div class="btn-row">
         <button class="btn-cancel" onclick="closeModal('createChatModal')">取消</button>
         <button class="btn-primary" onclick="createChatInGroup()">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Chat Room Detail -->
+  <div class="modal-overlay" id="chatDetailModal">
+    <div class="modal" style="width:480px;">
+      <h3>💬 聊天室详情</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:600;" id="chatDetailName"></span>
+        <span id="chatDetailAdminActions" style="display:none;">
+          <button class="btn-cancel" style="font-size:12px;padding:2px 8px;" onclick="showRenameChat()">✏️ 重命名</button>
+          <button class="btn-cancel" style="font-size:12px;padding:2px 8px;" onclick="showPostAnnouncement()">📢 公告</button>
+        </span>
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;" id="chatDetailMeta"></p>
+
+      <div class="detail-section-title" style="display:flex;justify-content:space-between;">
+        <span>👥 成员</span>
+        <span>
+          <button class="btn-cancel" style="font-size:12px;padding:1px 8px;" onclick="showInviteToChat()">+ 邀请</button>
+        </span>
+      </div>
+      <div id="chatDetailMembers" style="margin-bottom:12px;max-height:250px;overflow-y:auto;"></div>
+
+      <div class="btn-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;justify-content:space-between;">
+        <button class="btn-cancel" style="color:var(--danger);border:1px solid var(--danger);" onclick="leaveChatRoom()">退出聊天室</button>
+        <button class="btn-cancel" onclick="closeModal('chatDetailModal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Invite to Chat -->
+  <div class="modal-overlay" id="inviteChatModal">
+    <div class="modal">
+      <h3>👤 邀请成员</h3>
+      <div class="member-list-add" id="inviteChatMemberList"></div>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('inviteChatModal')">取消</button>
+        <button class="btn-primary" onclick="inviteToChat()">邀请</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Rename Chat -->
+  <div class="modal-overlay" id="renameChatModal">
+    <div class="modal">
+      <h3>✏️ 修改聊天室名称</h3>
+      <input id="renameChatInput" placeholder="新名称" />
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('renameChatModal')">取消</button>
+        <button class="btn-primary" onclick="renameChat()">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Post Announcement -->
+  <div class="modal-overlay" id="announcementModal">
+    <div class="modal">
+      <h3>📢 发布公告</h3>
+      <textarea id="announcementInput" placeholder="请输入公告内容" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;min-height:80px;resize:vertical;font-family:inherit;"></textarea>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('announcementModal')">取消</button>
+        <button class="btn-primary" onclick="postAnnouncement()">发布</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Member Info -->
+  <div class="modal-overlay" id="memberInfoModal">
+    <div class="modal" style="width:380px;">
+      <h3>👤 用户信息</h3>
+      <div style="text-align:center;padding:16px 0;">
+        <div class="avatar avatar-user" id="memberInfoAvatar" style="width:64px;height:64px;font-size:28px;margin:0 auto 12px;"></div>
+        <p style="font-size:18px;font-weight:600;" id="memberInfoName"></p>
+        <p style="font-size:14px;color:var(--text-muted);" id="memberInfoUid"></p>
+        <p style="font-size:14px;color:var(--text-muted);" id="memberInfoRole"></p>
+        <p style="font-size:14px;color:#475569;margin-top:12px;padding:8px 16px;background:#f1f5f9;border-radius:8px;" id="memberInfoDesc">暂无简介</p>
+      </div>
+      <div class="btn-row" style="justify-content:center;gap:12px;">
+        <button class="btn-primary" id="memberInfoChatBtn" onclick="memberInfoStartChat()">💬 聊天</button>
+        <button class="btn-cancel" id="memberInfoBlockBtn" style="color:var(--danger);border:1px solid var(--danger);" onclick="memberInfoToggleBlock()">拉黑</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn-cancel" style="width:100%;" onclick="closeModal('memberInfoModal')">关闭</button>
       </div>
     </div>
   </div>
@@ -397,7 +487,7 @@
         const isPrivateGroup = isSystemGroup && detail.category === '私聊';
         const isFriend = isPrivateGroup; // 私聊群组内成员即为好友，即时聊天群组内为非好友
         html += `
-          <div class="member-item" data-uid="${m.uid}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}', this)"`}>
+          <div class="member-item" data-uid="${m.uid}" data-name="${escapeHtml(m.name)}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}', this)"`} oncontextmenu="event.preventDefault();showMemberInfo(this)">
             <div class="avatar avatar-user">${escapeHtml(m.name.charAt(0))}</div>
             <div class="item-info" style="cursor:${isMe ? 'default' : 'pointer'}">
               <div class="item-name">
@@ -490,10 +580,11 @@
       privateChatPeerName = name;
       selectedMember = uid;
       selectedChat = null;
-      document.getElementById("chatHeader").textContent = "💬 " + escapeHtml(name);
+      document.getElementById("chatHeader").innerHTML = '<span>💬 ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showMemberInfoFromPrivate()">... 详情</button>';
       document.getElementById("textInput").disabled = false;
       document.getElementById("textInput").placeholder = "输入消息...";
       document.getElementById("inputBar").style.display = "flex";
+      loadBlacklist();
       loadPrivateMessages();
       if (polling) clearInterval(polling);
       polling = setInterval(loadPrivateMessages, 2000);
@@ -503,8 +594,12 @@
       if (!privateChatPeer) return;
       try {
         const msgs = await api("/api/messages?with=" + privateChatPeer);
-        const container = document.getElementById("msgContainer");
-        container.innerHTML = msgs.map(m => {
+        const blockedUids = blacklistCache.map(b => b.uid).filter(uid => uid !== currentUid);
+        const filtered = msgs.filter(m => !blockedUids.includes(m.sender) && !blockedUids.includes(m.receiver));
+        container.innerHTML = filtered.map(m => {
+          if (m.msg_type === 'system') {
+            return renderSystemMessage(m.content);
+          }
           const isMe = m.sender === currentUid;
           const cls = isMe ? "sent" : "received";
           let content = m.revoked
@@ -516,7 +611,9 @@
                 : escapeHtml(m.content || "");
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
-          return '<div class="bubble ' + cls + '"><div>' + content + '</div><div class="time">' + time + '</div></div>';
+          return '<div class="bubble ' + cls + '">'
+            + (!isMe ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(privateChatPeerName) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(privateChatPeerName) + '</div>' : '')
+            + '<div>' + content + '</div><div class="time">' + time + '</div></div>';
         }).join("");
         if (msgs.length === 0) {
           container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(privateChatPeerName) + ' 聊天吧</p></div>';
@@ -537,10 +634,11 @@
       currentChatRoomName = name;
       selectedChat = chatId;
       selectedMember = null;
-      document.getElementById("chatHeader").textContent = "# " + escapeHtml(name);
+      document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
       document.getElementById("textInput").disabled = false;
       document.getElementById("textInput").placeholder = "输入群消息...";
       document.getElementById("inputBar").style.display = "flex";
+      loadBlacklist();
       loadGroupMessages();
       if (polling) clearInterval(polling);
       polling = setInterval(loadGroupMessages, 2000);
@@ -554,9 +652,14 @@
       if (!currentChatRoom) return;
       try {
         const msgs = await api("/api/groups/" + currentChatRoom + "/messages");
+        const blockedUids = blacklistCache.map(b => b.uid);
+        const filtered = msgs.filter(m => !blockedUids.includes(m.sender));
         const container = document.getElementById("msgContainer");
-        container.innerHTML = msgs.map(m => {
+        container.innerHTML = filtered.map(m => {
           const isMe = m.sender === currentUid;
+          if (m.msg_type === 'system') {
+            return renderSystemMessage(m.content);
+          }
           const cls = isMe ? "sent" : "received";
           let content = m.revoked
             ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
@@ -568,7 +671,8 @@
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div class="bubble ' + cls + '">'
-            + (!isMe ? '<div class="sender-name">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
+            + (!isMe && m.sender !== 'system' ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(m.sender_name || m.sender) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
+            + (isMe && m.sender !== 'system' ? '<div class="sender-name" style="text-align:right;">' + escapeHtml(m.sender_name || '我') + '</div>' : '')
             + '<div>' + content + '</div><div class="time">' + time + '</div></div>';
         }).join("");
         if (msgs.length === 0) {
@@ -736,6 +840,11 @@
     // ---------- Create Chat Room in Group ----------
     async function showCreateChatModal() {
       if (!selectedGroup) return;
+      await loadAllUsers();
+      const memberList = document.getElementById("newChatMembers");
+      memberList.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
+        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+      ).join("");
       document.getElementById("newChatName").value = "";
       showModal("createChatModal");
     }
@@ -744,15 +853,274 @@
       if (!selectedGroup) return;
       const name = document.getElementById("newChatName").value.trim();
       if (!name) { alert("请输入聊天室名称"); return; }
+      const memberChecks = document.querySelectorAll("#newChatMembers input:checked");
+      const members = Array.from(memberChecks).map(c => c.value);
       try {
         await api("/api/user-groups/" + selectedGroup.group_id + "/create-chat", {
           method: "POST",
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name, members })
         });
         closeModal("createChatModal");
         enterGroup(selectedGroup.group_id);
       } catch (e) { alert(e.message); }
     }
+
+    // ---------- Chat Room Detail ----------
+    let chatDetailData = null; // stores the latest chat detail data
+
+    async function showChatDetail() {
+      if (!currentChatRoom) return;
+      try {
+        const detail = await api("/api/groups/" + currentChatRoom + "/detail");
+        chatDetailData = detail;
+        document.getElementById("chatDetailName").textContent = detail.name;
+        document.getElementById("chatDetailMeta").textContent = detail.members.length + " 位成员 · 创建者: " + (detail.members.find(m => m.role === 'admin')?.name || detail.creator);
+        
+        // Show admin actions for admin/manager
+        const myRole = detail.members.find(m => m.uid === currentUid)?.role;
+        const isAdmin = myRole === 'admin' || myRole === 'manager';
+        document.getElementById("chatDetailAdminActions").style.display = isAdmin ? 'inline' : 'none';
+
+        const memberList = document.getElementById("chatDetailMembers");
+        memberList.innerHTML = detail.members.map(m => {
+          const isMe = m.uid === currentUid;
+          let roleLabel = '';
+          if (m.role === 'admin') roleLabel = ' 🔑群主';
+          else if (m.role === 'manager') roleLabel = ' 🛡️管理员';
+          var _uid = m.uid, _name = m.name, _role = m.role;
+                              const roleActions = (!isMe && myRole === 'admin') 
+            ? '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--danger);cursor:pointer;" onclick="kickFromChat(this)">踢出</span>'
+              + (m.role !== 'manager' 
+                ? '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--primary);cursor:pointer;" onclick="manageAdmin(this)">设为管理</span>'
+                : '<span style="font-size:11px;margin-left:4px;color:var(--text-muted);cursor:pointer;" onclick="manageAdmin(this,\'unset\')">取消管理</span>')
+            : '';
+          return '<div data-uid="' + _uid + '" data-name="' + _name + '" data-role="' + _role + '" style="display:flex;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showMemberInfo(this)">' +
+            '<div class="avatar avatar-user" style="width:32px;height:32px;font-size:13px;">' + escapeHtml(m.name.charAt(0)) + '</div>' +
+            '<div style="flex:1;margin-left:8px;">' +
+              '<span style="font-weight:500;font-size:13px;">' + escapeHtml(m.name) + roleLabel + '</span>' +
+              (isMe ? ' <span style="font-size:11px;color:var(--text-muted);">(我)</span>' : '') +
+              roleActions +
+            '</div>' +
+          '</div>';
+        }).join("");
+        showModal("chatDetailModal");
+      } catch (e) { alert(e.message); }
+    }
+
+    async function leaveChatRoom() {
+      if (!currentChatRoom) return;
+      if (!confirm("是否确认退出聊天室？")) return;
+      try {
+        await api("/api/groups/" + currentChatRoom + "/leave", { method: "POST" });
+        closeModal("chatDetailModal");
+        currentChatRoom = null;
+        currentChatRoomName = "";
+        if (selectedGroup) enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // Invite to chat room
+    async function showInviteToChat() {
+      if (!currentChatRoom) return;
+      await loadAllUsers();
+      const currentMemberUids = chatDetailData ? chatDetailData.members.map(m => m.uid) : [];
+      const available = allUsers.filter(u => !currentMemberUids.includes(u.uid));
+      const list = document.getElementById("inviteChatMemberList");
+      list.innerHTML = available.map(u =>
+        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+      ).join("");
+      if (available.length === 0) {
+        list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">所有用户已在聊天室中</p>';
+      }
+      showModal("inviteChatModal");
+    }
+
+    async function inviteToChat() {
+      if (!currentChatRoom) return;
+      const checks = document.querySelectorAll("#inviteChatMemberList input:checked");
+      const uids = Array.from(checks).map(c => c.value);
+      if (uids.length === 0) { alert("请选择成员"); return; }
+      try {
+        await api("/api/groups/" + currentChatRoom + "/invite", {
+          method: "POST",
+          body: JSON.stringify({ members: uids })
+        });
+        closeModal("inviteChatModal");
+        showChatDetail();
+        loadGroupMessages();
+      } catch (e) { alert(e.message); }
+    }
+
+    // Rename chat room
+    async function showRenameChat() {
+      if (!currentChatRoom) return;
+      document.getElementById("renameChatInput").value = chatDetailData?.name || '';
+      showModal("renameChatModal");
+    }
+
+    async function renameChat() {
+      if (!currentChatRoom) return;
+      const name = document.getElementById("renameChatInput").value.trim();
+      if (!name) { alert("名称不能为空"); return; }
+      try {
+        await api("/api/groups/" + currentChatRoom + "/rename", {
+          method: "PUT",
+          body: JSON.stringify({ name })
+        });
+        closeModal("renameChatModal");
+        showChatDetail();
+        // Update header
+        document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
+      } catch (e) { alert(e.message); }
+    }
+
+    // Announcement
+    async function showPostAnnouncement() {
+      document.getElementById("announcementInput").value = '';
+      showModal("announcementModal");
+    }
+
+    async function postAnnouncement() {
+      if (!currentChatRoom) return;
+      const content = document.getElementById("announcementInput").value.trim();
+      if (!content) { alert("公告内容不能为空"); return; }
+      try {
+        await api("/api/groups/" + currentChatRoom + "/announcement", {
+          method: "POST",
+          body: JSON.stringify({ content })
+        });
+        closeModal("announcementModal");
+        loadGroupMessages();
+      } catch (e) { alert(e.message); }
+    }
+
+    // Kick from chat room
+    async function kickFromChat(el) {
+      if (!currentChatRoom) return;
+      const uid = el.dataset ? el.dataset.uid : el;
+      const name = el.dataset ? (el.dataset.name || '') : '';
+      if (!uid) return;
+      if (!confirm("确认将 " + name + " 移出聊天室？")) return;
+      try {
+        await api("/api/groups/" + currentChatRoom + "/kick", {
+          method: "POST",
+          body: JSON.stringify({ uid })
+        });
+        showChatDetail();
+        loadGroupMessages();
+      } catch (e) { alert(e.message); }
+    }
+
+    // Manage admin
+    async function manageAdmin(el, action) {
+      if (!currentChatRoom) return;
+      const uid = el.dataset ? el.dataset.uid : el;
+      const name = el.dataset ? (el.dataset.name || '') : '';
+      if (!uid) return;
+      action = action || 'set';
+      const msg = action === 'set' ? "确认将 " + name + " 设为管理员？" : "确认取消 " + name + " 的管理员权限？";
+      if (!confirm(msg)) return;
+      try {
+        await api("/api/groups/" + currentChatRoom + "/admin", {
+          method: "POST",
+          body: JSON.stringify({ uid, action })
+        });
+        showChatDetail();
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Member Info Panel ----------
+    let memberInfoTarget = null; // {uid, name, role, fromChat: bool}
+
+    async function showMemberInfo(el) {
+      const uid = el.dataset ? el.dataset.uid : el;
+      const name = el.dataset ? (el.dataset.name || '') : '';
+      const role = el.dataset ? (el.dataset.role || '') : '';
+      memberInfoTarget = { uid, name, role: role || '', fromChat: false };
+      document.getElementById("memberInfoAvatar").textContent = name.charAt(0);
+      document.getElementById("memberInfoName").textContent = name;
+      document.getElementById("memberInfoUid").textContent = uid;
+      const roleMap = { 'student': '学生', 'teacher': '教师', 'manager': '管理员' };
+      document.getElementById("memberInfoRole").textContent = roleMap[role] || role || '';
+      
+      // Load description and check block status
+      try {
+        const userData = await api("/api/user/" + uid);
+        document.getElementById("memberInfoDesc").textContent = userData.description || '暂无简介';
+      } catch (e) {
+        document.getElementById("memberInfoDesc").textContent = '暂无简介';
+      }
+      updateBlockBtn();
+      
+      showModal("memberInfoModal");
+    }
+
+    async function showMemberInfoFromPrivate() {
+      if (!privateChatPeer) return;
+      // Create a synthetic element with the peer's data
+      const el = { dataset: { uid: privateChatPeer, name: privateChatPeerName, role: '' } };
+      showMemberInfo(el);
+    }
+
+    async function memberInfoStartChat() {
+      if (!memberInfoTarget) return;
+      closeModal("memberInfoModal");
+      const uid = memberInfoTarget.uid;
+      const name = memberInfoTarget.name;
+      // Navigate to private chat - look for a group member that has this uid
+      // Use startPrivateChat function
+      if (typeof startPrivateChat === 'function') {
+        startPrivateChat(uid, name);
+      }
+      // If we were in a chat room, switch to private chat
+      currentChatRoom = null;
+      currentChatRoomName = null;
+    }
+    
+    // ---- Shared helpers ----
+    function renderSystemMessage(content) {
+      return '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:4px 0;">' + escapeHtml(content || "") + '</div>';
+    }
+
+    let blacklistCache = [];
+
+    async function loadBlacklist() {
+      try {
+        blacklistCache = await api("/api/blacklist");
+      } catch (e) { blacklistCache = []; }
+    }
+
+    async function updateBlockBtn() {
+      if (!memberInfoTarget) return;
+      const isBlocked = blacklistCache.some(b => b.uid === memberInfoTarget.uid);
+      const btn = document.getElementById("memberInfoBlockBtn");
+      if (isBlocked) {
+        btn.textContent = '取消拉黑';
+        btn.style.color = 'var(--text-muted)';
+        btn.style.borderColor = 'var(--border)';
+      } else {
+        btn.textContent = '拉黑';
+        btn.style.color = 'var(--danger)';
+        btn.style.borderColor = 'var(--danger)';
+      }
+    }
+
+    async function memberInfoToggleBlock() {
+      if (!memberInfoTarget) return;
+      const isBlocked = blacklistCache.some(b => b.uid === memberInfoTarget.uid);
+      try {
+        if (isBlocked) {
+          await api("/api/blacklist/remove", { method: "POST", body: JSON.stringify({ uid: memberInfoTarget.uid }) });
+        } else {
+          await api("/api/blacklist/add", { method: "POST", body: JSON.stringify({ uid: memberInfoTarget.uid }) });
+        }
+        await loadBlacklist();
+        updateBlockBtn();
+      } catch (e) { alert(e.message); }
+    }
+
+    // ---------- Context Menu (Right-click) ----------
+    // Handled via contextmenu event on message sender names and member items
 
     // ---------- Friend Management (for system groups) ----------
     async function toggleFriend(uid, name) {
@@ -773,6 +1141,7 @@
     window.onload = function() {
       if (!localStorage.getItem("token")) { location.href = "/"; return; }
       loadGroups();
+      loadBlacklist();
     };
   </script>
 </body>

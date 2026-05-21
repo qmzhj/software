@@ -95,6 +95,23 @@
         min-height: 20px;
         text-align: center;
       }
+      .form-group textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 14px;
+        outline: none;
+        background: #f8fafc;
+        transition: all 0.3s ease;
+        resize: vertical;
+        min-height: 80px;
+        font-family: inherit;
+      }
+      .form-group textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+      }
       .role-info {
         background: #f1f5f9;
         padding: 8px 12px;
@@ -175,6 +192,15 @@
         />
       </div>
       
+      <div class="form-group">
+        <label>个人简介</label>
+        <textarea
+          id="descInput"
+          placeholder="介绍一下自己吧..."
+          maxlength="200"
+        ></textarea>
+      </div>
+
       <button class="btn" onclick="saveProfile()">保存修改</button>
       <div class="error" id="errorMsg"></div>
       <div class="success" id="successMsg"></div>
@@ -210,6 +236,15 @@
 
 
 
+      // 加载个人简介
+      let currentDescription = "";
+      fetch("/api/userinfo", {
+        headers: { "Authorization": token }
+      }).then(r=>r.json()).then(data=>{
+        currentDescription = data.description || "";
+        document.getElementById("descInput").value = currentDescription;
+      }).catch(()=>{});
+
       // 保存修改
       async function saveProfile() {
         // 清空之前的消息
@@ -222,9 +257,9 @@
         
 
         // 验证输入非空有效
-        // 获取用户信息
         let currentPhone = localStorage.getItem("phone") || "";
-        if (!(phone != currentPhone||phone ||( pwd&&confirmPwd))) {
+        const desc = document.getElementById("descInput").value.trim();
+        if (!(phone != currentPhone||phone ||( pwd&&confirmPwd) || desc !== currentDescription)) {
           document.getElementById("errorMsg").innerText = "修改内容为空";
           return;
         }
@@ -260,14 +295,16 @@
         try {
           // 构建请求数据
           const requestData = {};
-          
+
           if (phone) {
             requestData.phone = phone;
           }
-          
+
           if (pwd) {
             requestData.password = pwd;
           }
+
+          requestData.description = document.getElementById("descInput").value.trim();
           
           // 发送请求
           const res = await fetch("/api/userinfo", {

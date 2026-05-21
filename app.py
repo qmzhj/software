@@ -79,6 +79,14 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS lesson_stu
                  (lesson_id TEXT, stu_uid TEXT,
                   PRIMARY KEY(lesson_id, stu_uid))''')
+    # 兼容旧数据库：添加 description 列（如果不存在）
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN description TEXT DEFAULT ''")
+    except Exception:
+        pass  # 列已存在
+    c.execute('''CREATE TABLE IF NOT EXISTS blacklist
+                 (uid TEXT, blocked_uid TEXT,
+                  PRIMARY KEY(uid, blocked_uid))''')
     conn.commit()
     _seed_data(conn)
     conn.close()
@@ -289,10 +297,6 @@ def index():
 @app.route('/main')
 def main_page():
     return app.send_static_file('main.html')
-
-@app.route('/chat')
-def chat_page():
-    return app.send_static_file('chat.html')
 
 @app.route('/groups')
 def groups_page():
@@ -585,31 +589,57 @@ def logout():
 @token_required
 def userinfo():
     u = g.current_user
-    return jsonify({'uid':u['uid'],'name':u['name'],'role':u['role']})
+    return jsonify({
+        'uid': u['uid'],
+        'name': u['name'],
+        'role': u['role'],
+        'phone': u['phone'],
+        'description': u['description'] if u['description'] else ''
+    })
 
-# 个人资料修改（姓名和密码）
+# 个人资料修改
 @app.route('/api/userinfo', methods=['PUT'])
 @token_required
 def update_userinfo():
     data = request.get_json()
-    new_phone=data.get('phone','').strip()
-    new_password = data.get('password','').strip()
+    new_phone = data.get('phone', '').strip()
+    new_password = data.get('password', '').strip()
+    new_description = (data.get('description') or '').strip()
     conn = get_db()
     try:
         if new_password:
             if not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$', new_password):
-                return jsonify({'error':'密码需包含大小写字母和数字，至少8位'}),400
-            conn.execute('UPDATE users SET  password=?  WHERE uid=?',
+                return jsonify({'error': '密码需包含大小写字母和数字，至少8位'}), 400
+            conn.execute('UPDATE users SET password=? WHERE uid=?',
                          (hash_password(new_password), g.current_user['uid']))
         if new_phone:
-            conn.execute('UPDATE users SET  phone=? WHERE uid=?',
+            conn.execute('UPDATE users SET phone=? WHERE uid=?',
                          (new_phone, g.current_user['uid']))
+        if new_description is not None:
+            conn.execute('UPDATE users SET description=? WHERE uid=?',
+                         (new_description, g.current_user['uid']))
         conn.commit()
-        return jsonify({'message':'修改成功'})
+        return jsonify({'message': '修改成功'})
     except:
-        return jsonify({'error':'系统繁忙'}),500
+        return jsonify({'error': '系统繁忙'}), 500
     finally:
         conn.close()
+
+@app.route('/api/user/<uid>', methods=['GET'])
+@token_required
+def get_user_info(uid):
+    conn = get_db()
+    user = conn.execute('SELECT uid, name, role, description FROM users WHERE uid=?',
+                        (uid,)).fetchone()
+    conn.close()
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    return jsonify({
+        'uid': user['uid'],
+        'name': user['name'],
+        'role': user['role'],
+        'description': user['description'] if user['description'] else ''
+    })
 
 # ---------- 私聊 ----------
 @app.route('/api/users', methods=['GET'])
@@ -970,22 +1000,32 @@ def create_chat_in_group(group_id):
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'error': '聊天室名称不能为空'}), 400
-    
+
     conn = get_db()
     group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (group_id,)).fetchone()
     if not group:
         return jsonify({'error': '群组不存在'}), 404
-    
+
     try:
         now = time.time()
         chat_id = secrets.token_hex(8)
-        category = group.get('category', '自定义')
+        category = group['category'] if group['category'] else '自定义'
         # 创建群聊
         conn.execute('INSERT INTO groups_chat VALUES (?,?,?,?,?,?)',
                      (chat_id, name, uid, now, 'custom', category))
-        # 加入创建者
+        # 加入创建者（admin）
         conn.execute('INSERT INTO group_members VALUES (?,?,?,?)',
                      (chat_id, uid, 'admin', now))
+        creator_name_row = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        creator_name = creator_name_row['name'] if creator_name_row else uid
+        conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                     (chat_id, 'system', creator_name + ' 创建了聊天室', 'system', now))
+        # 添加选中的成员
+        member_uids = data.get('members', [])
+        for m_uid in member_uids:
+            if conn.execute('SELECT 1 FROM users WHERE uid=?', (m_uid,)).fetchone():
+                conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?)',
+                             (chat_id, m_uid, 'member', now))
         # 关联到群组
         conn.execute('INSERT INTO user_group_chats VALUES (?,?,?)',
                      (group_id, chat_id, name))
@@ -1101,6 +1141,52 @@ def remove_friend():
     conn.commit()
     conn.close()
     return jsonify({'message': '已删除好友'})
+
+# ---------- 黑名单 ----------
+@app.route('/api/blacklist', methods=['GET'])
+@token_required
+def get_blacklist():
+    uid = g.current_user['uid']
+    conn = get_db()
+    blocked = conn.execute('''SELECT u.uid, u.name, u.role FROM blacklist b
+                               JOIN users u ON b.blocked_uid = u.uid
+                               WHERE b.uid=?''', (uid,)).fetchall()
+    conn.close()
+    return jsonify([{'uid': b['uid'], 'name': b['name'], 'role': b['role']} for b in blocked])
+
+@app.route('/api/blacklist/add', methods=['POST'])
+@token_required
+def add_blacklist():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    blocked_uid = data.get('uid', '').strip()
+    if not blocked_uid:
+        return jsonify({'error': '用户ID不能为空'}), 400
+    if blocked_uid == uid:
+        return jsonify({'error': '不能拉黑自己'}), 400
+    conn = get_db()
+    try:
+        conn.execute('INSERT OR IGNORE INTO blacklist VALUES (?,?)', (uid, blocked_uid))
+        conn.commit()
+        return jsonify({'message': '已拉黑'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/blacklist/remove', methods=['POST'])
+@token_required
+def remove_blacklist():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    blocked_uid = data.get('uid', '').strip()
+    if not blocked_uid:
+        return jsonify({'error': '用户ID不能为空'}), 400
+    conn = get_db()
+    conn.execute('DELETE FROM blacklist WHERE uid=? AND blocked_uid=?', (uid, blocked_uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已取消拉黑'})
 
 # ---------- 系统默认群组自动创建 ----------
 def ensure_default_groups(uid):
@@ -1222,6 +1308,8 @@ def create_group():
         for m in all_members:
             role = 'admin' if m == creator else 'member'
             conn.execute('INSERT INTO group_members VALUES (?,?,?,?)', (group_id, m, role, now))
+        conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                     (group_id, 'system', '聊天室已创建', 'system', now))
         conn.commit()
         return jsonify({'message':'群聊创建成功','group_id':group_id}),201
     except Exception as e:
@@ -1236,9 +1324,9 @@ def get_group_messages(group_id):
     conn = get_db()
     if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?',(group_id,uid)).fetchone():
         return jsonify({'error':'无权访问'}),403
-    msgs = conn.execute('''SELECT gm.*, u.name as sender_name 
+    msgs = conn.execute('''SELECT gm.*, COALESCE(u.name, '系统') as sender_name
                             FROM group_messages gm
-                            JOIN users u ON gm.sender = u.uid
+                            LEFT JOIN users u ON gm.sender = u.uid
                             WHERE gm.group_id=? ORDER BY gm.timestamp''', (group_id,)).fetchall()
     conn.close()
     return jsonify([{'id':m['id'],'sender':m['sender'],'sender_name':m['sender_name'],'content':m['content'],
@@ -1289,9 +1377,145 @@ def leave_group(group_id):
         count = conn.execute('SELECT COUNT(*) FROM group_members WHERE group_id=?',(group_id,)).fetchone()[0]
         if count > 1:
             return jsonify({'error':'群主不能退出，请转让群主'}),403
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    user_name = user['name'] if user else uid
+    conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                 (group_id, 'system', user_name + ' 退出了聊天室', 'system', time.time()))
     conn.execute('DELETE FROM group_members WHERE group_id=? AND uid=?',(group_id,uid))
     conn.commit(); conn.close()
     return jsonify({'message':'已退出'})
+
+@app.route('/api/groups/<group_id>/detail', methods=['GET'])
+@token_required
+def chat_room_detail(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?',(group_id,uid)).fetchone():
+        return jsonify({'error':'无权访问'}),403
+    chat = conn.execute('SELECT * FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    if not chat: return jsonify({'error':'聊天室不存在'}),404
+    members = conn.execute('''SELECT gm.uid, gm.role, gm.joined_at, u.name
+                              FROM group_members gm JOIN users u ON gm.uid = u.uid
+                              WHERE gm.group_id=? ORDER BY gm.joined_at''', (group_id,)).fetchall()
+    conn.close()
+    return jsonify({
+        'group_id': chat['group_id'],
+        'name': chat['name'],
+        'creator': chat['creator'],
+        'group_type': chat['group_type'],
+        'members': [{'uid':m['uid'],'name':m['name'],'role':m['role']} for m in members]
+    })
+
+@app.route('/api/groups/<group_id>/invite', methods=['POST'])
+@token_required
+def invite_to_chat(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone():
+        return jsonify({'error':'你不在聊天室中'}),403
+    data = request.get_json()
+    members = data.get('members', [])
+    now = time.time()
+    added = []
+    for m_uid in members:
+        if conn.execute('SELECT 1 FROM users WHERE uid=?', (m_uid,)).fetchone():
+            if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?', (group_id, m_uid)).fetchone():
+                conn.execute('INSERT INTO group_members VALUES (?,?,?,?)', (group_id, m_uid, 'member', now))
+                added.append(m_uid)
+    conn.commit()
+    # notify
+    if added:
+        user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        user_name = user['name'] if user else uid
+        conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                     (group_id, 'system', f'{user_name} 邀请了 {len(added)} 位成员', 'system', time.time()))
+        conn.commit()
+    conn.close()
+    return jsonify({'message':f'已邀请 {len(added)} 位成员'})
+
+@app.route('/api/groups/<group_id>/kick', methods=['POST'])
+@token_required
+def kick_from_chat(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
+    if not member or member['role'] not in ('admin',):
+        return jsonify({'error':'仅群主可踢出成员'}),403
+    data = request.get_json()
+    target_uid = data.get('uid', '')
+    if target_uid == uid:
+        return jsonify({'error':'不能踢出自己'}),400
+    target = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, target_uid)).fetchone()
+    if not target:
+        return jsonify({'error':'该用户不在聊天室中'}),404
+    if target['role'] == 'admin':
+        return jsonify({'error':'不能踢出群主'}),400
+    target_user = conn.execute('SELECT name FROM users WHERE uid=?', (target_uid,)).fetchone()
+    target_name = target_user['name'] if target_user else target_uid
+    conn.execute('DELETE FROM group_messages WHERE sender=? AND group_id=?', (target_uid, group_id))
+    conn.execute('DELETE FROM group_members WHERE group_id=? AND uid=?', (group_id, target_uid))
+    conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                 (group_id, 'system', f'{target_name} 已被移出聊天室', 'system', time.time()))
+    conn.commit(); conn.close()
+    return jsonify({'message':f'已移除 {target_name}'})
+
+@app.route('/api/groups/<group_id>/rename', methods=['PUT'])
+@token_required
+def rename_chat(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
+    if not member or member['role'] not in ('admin',):
+        return jsonify({'error':'仅群主和管理员可修改名称'}),403
+    name = request.get_json().get('name', '').strip()
+    if not name:
+        return jsonify({'error':'名称不能为空'}),400
+    conn.execute('UPDATE groups_chat SET name=? WHERE group_id=?', (name, group_id))
+    conn.commit(); conn.close()
+    return jsonify({'message':'名称已修改'})
+
+@app.route('/api/groups/<group_id>/admin', methods=['POST'])
+@token_required
+def manage_admin(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
+    if not member or member['role'] != 'admin':
+        return jsonify({'error':'仅群主可管理管理员'}),403
+    data = request.get_json()
+    target_uid = data.get('uid', '')
+    action = data.get('action', '')  # 'set' or 'unset'
+    target = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, target_uid)).fetchone()
+    if not target:
+        return jsonify({'error':'该用户不在聊天室中'}),404
+    if target['role'] == 'admin':
+        return jsonify({'error':'不能修改群主权限'}),400
+    if action == 'set':
+        conn.execute('UPDATE group_members SET role=? WHERE group_id=? AND uid=?', ('manager', group_id, target_uid))
+    elif action == 'unset':
+        conn.execute('UPDATE group_members SET role=? WHERE group_id=? AND uid=?', ('member', group_id, target_uid))
+    else:
+        return jsonify({'error':'无效操作'}),400
+    conn.commit(); conn.close()
+    return jsonify({'message':'已更新'})
+
+@app.route('/api/groups/<group_id>/announcement', methods=['POST'])
+@token_required
+def post_chat_announcement(group_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
+    if not member or member['role'] not in ('admin', 'manager'):
+        return jsonify({'error':'仅群主和管理员可发布公告'}),403
+    content = request.get_json().get('content', '').strip()
+    if not content:
+        return jsonify({'error':'公告内容不能为空'}),400
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    user_name = user['name'] if user else uid
+    conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
+                 (group_id, 'system', f'📢 公告 - {user_name}: {content}', 'system', time.time()))
+    conn.commit(); conn.close()
+    return jsonify({'message':'公告已发布'})
 
 # ---------- 公告 ----------
 @app.route('/api/announcements', methods=['GET'])
