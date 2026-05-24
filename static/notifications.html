@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>通知 - 校园通</title>
+    <style>
+      :root {
+        --primary: #4f46e5;
+        --bg: #f1f5f9;
+        --card: #fff;
+        --border: #e2e8f0;
+        --danger: #ef4444;
+        --text-muted: #64748b;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        padding: 24px;
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      h2 { color: #1e293b; margin-bottom: 20px; }
+      .card {
+        background: var(--card);
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .card h3 { font-size: 15px; margin-bottom: 4px; color: #1e293b; }
+      .card p { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+      .card .meta { font-size: 12px; color: #94a3b8; }
+      .actions { display: flex; gap: 8px; margin-top: 10px; }
+      .btn-primary, .btn-cancel {
+        padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--card); transition: all .2s;
+      }
+      .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+      .btn-primary:hover { opacity: .9; }
+      .btn-cancel:hover { background: #f1f5f9; }
+      .btn-danger { color: var(--danger); border-color: var(--danger); }
+      .btn-danger:hover { background: #fef2f2; }
+      .empty-state {
+        text-align: center;
+        padding: 48px 16px;
+        color: var(--text-muted);
+      }
+      .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: #94a3b8; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+      .badge-friend { background: #dbeafe; color: var(--primary); }
+      .badge-invite { background: #fef3c7; color: #92400e; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>🔔 通知中心</h2>
+      <div id="notificationList">
+        <div class="empty-state"><h3>加载中...</h3></div>
+      </div>
+    </div>
+    <script>
+      const token = localStorage.getItem("token");
+      if (!token) { location.href = "/"; }
+
+      async function api(url, opt = {}) {
+        const headers = { Authorization: token, "Content-Type": "application/json" };
+        const res = await fetch(url, { ...opt, headers });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "请求失败");
+        return data;
+      }
+
+      async function loadNotifications() {
+        try {
+          const notifs = await api("/api/notifications");
+          const list = document.getElementById("notificationList");
+          if (notifs.length === 0) {
+            list.innerHTML = '<div class="empty-state"><h3>📭 暂无通知</h3><p>好友申请和聊天室邀请会显示在这里</p></div>';
+            return;
+          }
+          list.innerHTML = notifs.map(n => {
+            if (n.type === 'friend_request') {
+              return '<div class="card" data-id="' + n.id + '">' +
+                '<h3>👤 好友申请 <span class="badge badge-friend">来自 ' + escapeHtml(n.from_name) + '</span></h3>' +
+                (n.message ? '<p>' + escapeHtml(n.message) + '</p>' : '') +
+                '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
+                '<div class="actions">' +
+                  '<button class="btn-primary" onclick="approveFriendRequest(' + n.id + ', this)">同意</button>' +
+                  '<button class="btn-cancel btn-danger" onclick="rejectFriendRequest(' + n.id + ', this)">拒绝</button>' +
+                '</div></div>';
+            } else if (n.type === 'chat_invite') {
+              return '<div class="card" data-id="' + n.id + '">' +
+                '<h3>💬 聊天室邀请 <span class="badge badge-invite">来自 ' + escapeHtml(n.from_name) + '</span></h3>' +
+                '<p>邀请你加入聊天室「' + escapeHtml(n.chat_name) + '」</p>' +
+                '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
+                '<div class="actions">' +
+                  '<button class="btn-primary" onclick="approveChatInvite(' + n.id + ', this)">同意</button>' +
+                  '<button class="btn-cancel btn-danger" onclick="rejectChatInvite(' + n.id + ', this)">拒绝</button>' +
+                '</div></div>';
+            }
+            return '';
+          }).join("");
+        } catch (e) {
+          document.getElementById("notificationList").innerHTML = '<div class="empty-state"><h3>加载失败</h3><p>' + escapeHtml(e.message) + '</p></div>';
+        }
+      }
+
+      async function approveFriendRequest(id, btn) {
+        try {
+          await api("/api/friend-requests/" + id + "/approve", { method: "POST" });
+          const card = btn.closest('.card');
+          card.innerHTML = '<p style="color:#10b981;font-weight:500;">✅ 已同意好友申请</p>';
+        } catch (e) { alert(e.message); }
+      }
+
+      async function rejectFriendRequest(id, btn) {
+        try {
+          await api("/api/friend-requests/" + id + "/reject", { method: "POST" });
+          const card = btn.closest('.card');
+          card.innerHTML = '<p style="color:var(--text-muted);">已拒绝</p>';
+        } catch (e) { alert(e.message); }
+      }
+
+      async function approveChatInvite(id, btn) {
+        try {
+          const res = await api("/api/chat-invites/" + id + "/approve", { method: "POST" });
+          const card = btn.closest('.card');
+          card.innerHTML = '<p style="color:#10b981;font-weight:500;">✅ 已接受邀请，加入聊天室「' + escapeHtml(res.chat_name) + '」</p>';
+        } catch (e) { alert(e.message); }
+      }
+
+      async function rejectChatInvite(id, btn) {
+        try {
+          await api("/api/chat-invites/" + id + "/reject", { method: "POST" });
+          const card = btn.closest('.card');
+          card.innerHTML = '<p style="color:var(--text-muted);">已拒绝</p>';
+        } catch (e) { alert(e.message); }
+      }
+
+      function escapeHtml(t) {
+        const d = document.createElement("div");
+        d.textContent = t;
+        return d.innerHTML;
+      }
+
+      loadNotifications();
+      setInterval(loadNotifications, 5000);
+    </script>
+  </body>
+</html>

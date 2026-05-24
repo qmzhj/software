@@ -207,6 +207,21 @@
       font-size: 11px; background: #e0e7ff; color: var(--primary);
       padding: 1px 8px; border-radius: 8px; margin-left: 6px;
     }
+    .multi-cb { width:16px;height:16px;margin:0 6px 0 2px;flex-shrink:0;cursor:pointer; }
+    .member-item, .chat-item { display:flex;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border);cursor:pointer; }
+    .member-item:hover, .chat-item:hover { background:#f8fafc; }
+    .add-section-title { font-size:13px;font-weight:600;color:#475569;padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:4px; }
+    .ctx-menu {
+      position:fixed; background:var(--card); border:1px solid var(--border);
+      border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.12);
+      padding:4px; z-index:2000; min-width:140px; display:none;
+    }
+    .ctx-menu .ctx-item {
+      padding:8px 14px; font-size:13px; cursor:pointer; border-radius:8px;
+      display:flex; align-items:center; gap:6px;
+    }
+    .ctx-menu .ctx-item:hover { background:#f1f5f9; }
+    .ctx-menu .ctx-item.danger { color:var(--danger); }
   </style>
 </head>
 <body>
@@ -219,9 +234,9 @@
       </span>
     </div>
     <div class="toolbar" id="detailToolbar" style="display:none">
-      <button onclick="showAddMemberModal()">+ 添加成员</button>
+      <button onclick="showAddItemModal()">+ 添加聊天</button>
       <button onclick="showCreateChatModal()">+ 创建聊天室</button>
-      <button onclick="showAddChatModal()">+ 关联聊天室</button>
+      <button id="multiSelectToggle" onclick="toggleMultiSelect()">☐ 多选</button>
     </div>
     <div class="group-list" id="groupList"></div>
   </div>
@@ -229,6 +244,10 @@
   <!-- Chat Area -->
   <div class="chat-area">
     <div class="chat-header" id="chatHeader">👥 选择一个群组</div>
+    <div id="announcementBanner" style="display:none;padding:8px 16px;background:#fef3c7;border-bottom:1px solid #f59e0b;font-size:13px;color:#92400e;flex-shrink:0;align-items:center;justify-content:space-between;">
+      <span id="announcementBannerText" style="flex:1;"></span>
+      <button onclick="dismissAnnouncement()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#92400e;padding:0 4px;">×</button>
+    </div>
     <div class="messages" id="msgContainer">
       <div class="empty-state" id="emptyState">
         <h3>📁 群组管理</h3>
@@ -271,29 +290,15 @@
     </div>
   </div>
 
-  <!-- Modal: Add Member -->
-  <div class="modal-overlay" id="addMemberModal">
-    <div class="modal">
-      <h3>👤 添加成员</h3>
-      <div class="member-list-add" id="addMemberList"></div>
+  <!-- Modal: Add Chat (unified: members + chat rooms) -->
+  <div class="modal-overlay" id="addItemModal">
+    <div class="modal" style="width:440px;">
+      <h3>📥 添加聊天</h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">选择要添加到本群组的联系人和聊天室</p>
+      <div id="addItemList" style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px;margin-bottom:10px;"></div>
       <div class="btn-row">
-        <button class="btn-cancel" onclick="closeModal('addMemberModal')">取消</button>
-        <button class="btn-primary" onclick="addMembers()">添加</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: Add Chat -->
-  <div class="modal-overlay" id="addChatModal">
-    <div class="modal">
-      <h3>💬 关联聊天室</h3>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">
-        将已有群聊添加到当前群组
-      </p>
-      <div class="member-list-add" id="addChatList"></div>
-      <div class="btn-row">
-        <button class="btn-cancel" onclick="closeModal('addChatModal')">取消</button>
-        <button class="btn-primary" onclick="addChatsToGroup()">添加</button>
+        <button class="btn-cancel" onclick="closeModal('addItemModal')">取消</button>
+        <button class="btn-primary" onclick="addItemsToGroup()">添加</button>
       </div>
     </div>
   </div>
@@ -334,7 +339,10 @@
       <div id="chatDetailMembers" style="margin-bottom:12px;max-height:250px;overflow-y:auto;"></div>
 
       <div class="btn-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;justify-content:space-between;">
-        <button class="btn-cancel" style="color:var(--danger);border:1px solid var(--danger);" onclick="leaveChatRoom()">退出聊天室</button>
+        <div>
+          <button class="btn-cancel" style="color:var(--danger);border:1px solid var(--danger);" onclick="leaveChatRoom()">退出聊天室</button>
+          <button class="btn-cancel" id="dissolveChatBtn" style="color:var(--danger);border:1px solid var(--danger);margin-left:6px;display:none;" onclick="dissolveChatRoom()">解散聊天室</button>
+        </div>
         <button class="btn-cancel" onclick="closeModal('chatDetailModal')">关闭</button>
       </div>
     </div>
@@ -390,9 +398,44 @@
       <div class="btn-row" style="justify-content:center;gap:12px;">
         <button class="btn-primary" id="memberInfoChatBtn" onclick="memberInfoStartChat()">💬 聊天</button>
         <button class="btn-cancel" id="memberInfoBlockBtn" style="color:var(--danger);border:1px solid var(--danger);" onclick="memberInfoToggleBlock()">拉黑</button>
+        <button class="btn-cancel" id="memberInfoFriendBtn" style="display:none;" onclick="memberInfoToggleFriend()"></button>
       </div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn-cancel" style="width:100%;" onclick="closeModal('memberInfoModal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Send Friend Request -->
+  <div class="modal-overlay" id="friendRequestModal">
+    <div class="modal" style="width:360px;">
+      <h3>🤍 加好友</h3>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:12px;">发送好友申请给 <strong id="friendReqTargetName"></strong></p>
+      <textarea id="friendReqMessage" placeholder="添加好友备注..." style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;min-height:80px;resize:vertical;font-family:inherit;"></textarea>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeModal('friendRequestModal')">取消</button>
+        <button class="btn-primary" onclick="sendFriendRequest()">发送申请</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div class="ctx-menu" id="ctxMenu">
+    <div class="ctx-item" id="ctxDetail" onclick="ctxHandleDetail()">📋 详情</div>
+    <div class="ctx-item danger" id="ctxRemove" onclick="ctxHandleRemove()">🚪 移出本群组</div>
+  </div>
+
+  <!-- Modal: Popup Private Chat -->
+  <div class="modal-overlay" id="popupChatModal">
+    <div class="modal" style="width:480px;height:560px;display:flex;flex-direction:column;padding:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <span style="font-weight:600;font-size:16px;" id="popupChatTitle">💬 私聊</span>
+        <button class="btn-cancel" style="padding:4px 12px;font-size:13px;" onclick="closePopupChat()">✕ 返回</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:12px 16px;" id="popupChatMessages"></div>
+      <div style="display:flex;padding:12px 16px;border-top:1px solid var(--border);gap:8px;flex-shrink:0;">
+        <input id="popupChatInput" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;" placeholder="输入消息..." onkeypress="if(event.key==='Enter') sendPopupChatMsg()" />
+        <button class="btn-primary" style="padding:10px 20px;border-radius:8px;" onclick="sendPopupChatMsg()">发送</button>
       </div>
     </div>
   </div>
@@ -408,6 +451,69 @@
     let selectedChat = null;     // current chat room for group chat
     let polling = null;
     let allUsers = [];
+    let multiSelectMode = false;
+
+    // Context menu state
+    let ctxTarget = null; // { type: 'member'|'chat', uid/chatId, name }
+
+    // ---------- Context Menu ----------
+    function showContextMenu(e, type, id, name) {
+      e.preventDefault();
+      ctxTarget = { type, id, name };
+      const menu = document.getElementById("ctxMenu");
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+      menu.style.display = 'block';
+    }
+
+    function hideContextMenu() {
+      document.getElementById("ctxMenu").style.display = 'none';
+      ctxTarget = null;
+    }
+
+    function ctxHandleDetail() {
+      const t = ctxTarget;
+      hideContextMenu();
+      if (!t) return;
+      if (t.type === 'member') {
+        const el = { dataset: { uid: t.id, name: t.name, role: '' } };
+        if (selectedGroup) {
+          const member = selectedGroup.members.find(m => m.uid === t.id);
+          if (member) el.dataset.role = member.role || '';
+        }
+        showMemberInfo(el);
+      } else if (t.type === 'chat') {
+        if (!currentChatRoom || currentChatRoom !== t.id) {
+          enterChatRoom(t.id, t.name, null);
+        }
+        showChatDetail();
+      }
+    }
+
+    async function ctxHandleRemove() {
+      const t = ctxTarget;
+      hideContextMenu();
+      if (!t || !selectedGroup) return;
+      if (!confirm('确认将"' + t.name + '"移出本群组？')) return;
+      try {
+        const payload = {};
+        if (t.type === 'member') payload.member_uids = [t.id];
+        else if (t.type === 'chat') payload.chat_ids = [t.id];
+        await api("/api/user-groups/" + selectedGroup.group_id + "/batch-remove", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    // Hide context menu on any click
+    document.addEventListener('click', function(e) {
+      const menu = document.getElementById("ctxMenu");
+      if (menu.style.display === 'block' && !menu.contains(e.target)) {
+        hideContextMenu();
+      }
+    });
 
     // ---------- API helper ----------
     async function api(url, opt = {}) {
@@ -475,19 +581,26 @@
     }
 
     function renderGroupDetail(detail) {
-      // Sidebar: show members and chats
       const list = document.getElementById("groupList");
+      const multi = multiSelectMode;
       let html = '<div class="detail-section">';
+
+      if (multi) {
+        html += '<div style="padding:8px 4px;display:flex;gap:6px;flex-wrap:wrap;">'
+          + '<button class="btn-cancel" style="font-size:12px;padding:4px 10px;" onclick="toggleSelectAllMembers(true)">全选成员</button>'
+          + '<button class="btn-cancel" style="font-size:12px;padding:4px 10px;" onclick="toggleSelectAllChats(true)">全选聊天室</button>'
+          + '<button class="btn-primary" style="font-size:12px;padding:4px 10px;background:var(--danger);border-color:var(--danger);" id="removeSelectedBtn" disabled onclick="removeSelectedItems()">移出</button>'
+          + '<button class="btn-cancel" style="font-size:12px;padding:4px 10px;" onclick="toggleMultiSelect()">取消</button>'
+          + '</div>';
+      }
 
       // Members section
       html += '<div class="detail-section-title">👤 成员 (' + detail.members.length + ')</div>';
       detail.members.forEach(m => {
         const isMe = m.uid === currentUid;
-        const isSystemGroup = detail.group_type === 'system';
-        const isPrivateGroup = isSystemGroup && detail.category === '私聊';
-        const isFriend = isPrivateGroup; // 私聊群组内成员即为好友，即时聊天群组内为非好友
         html += `
-          <div class="member-item" data-uid="${m.uid}" data-name="${escapeHtml(m.name)}" ${isMe ? '' : `onclick="startPrivateChat('${m.uid}','${escapeHtml(m.name)}', this)"`} oncontextmenu="event.preventDefault();showMemberInfo(this)">
+          <div class="member-item" data-uid="${m.uid}" data-name="${escapeHtml(m.name)}" ${multi ? '' : 'onclick="startPrivateChat(\'' + m.uid + '\',\'' + escapeHtml(m.name) + '\', this)" oncontextmenu="showContextMenu(event,\'member\',\'' + m.uid + '\',\'' + escapeHtml(m.name) + '\')"'}>
+            ${multi ? '<input type="checkbox" class="multi-cb member-cb" value="' + m.uid + '" onchange="updateRemoveBtn()" ' + (isMe ? 'disabled' : '') + ' />' : ''}
             <div class="avatar avatar-user">${escapeHtml(m.name.charAt(0))}</div>
             <div class="item-info" style="cursor:${isMe ? 'default' : 'pointer'}">
               <div class="item-name">
@@ -496,7 +609,6 @@
               </div>
               <div class="item-sub">${m.role}</div>
             </div>
-            ${!isMe && isSystemGroup ? `<span class="friend-tag ${isFriend ? 'is-friend' : ''}" onclick="event.stopPropagation();toggleFriend('${m.uid}','${escapeHtml(m.name)}')">${isFriend ? '❤️ 好友' : '🤍 加好友'}</span>` : ''}
           </div>
         `;
       });
@@ -505,7 +617,8 @@
       html += '<div class="detail-section-title">💬 聊天室 (' + detail.chats.length + ')</div>';
       detail.chats.forEach(c => {
         html += `
-          <div class="chat-item" data-chatid="${c.chat_id}" onclick="enterChatRoom('${c.chat_id}','${escapeHtml(c.chat_name)}', this)">
+          <div class="chat-item" data-chatid="${c.chat_id}" ${multi ? '' : 'onclick="enterChatRoom(\'' + c.chat_id + '\',\'' + escapeHtml(c.chat_name) + '\', this)" oncontextmenu="showContextMenu(event,\'chat\',\'' + c.chat_id + '\',\'' + escapeHtml(c.chat_name) + '\')"'}>
+            ${multi ? '<input type="checkbox" class="multi-cb chat-cb" value="' + c.chat_id + '" onchange="updateRemoveBtn()" />' : ''}
             <div class="avatar avatar-chat">#</div>
             <div class="item-info">
               <div class="item-name">${escapeHtml(c.chat_name)}</div>
@@ -519,6 +632,8 @@
     }
 
     function showGroupDetailView(detail) {
+      multiSelectMode = false;
+      document.getElementById("multiSelectToggle").textContent = '☐ 多选';
       // Update header
       document.getElementById("sidebarTitle").textContent = "📁 " + detail.name;
       document.getElementById("sidebarActions").innerHTML =
@@ -543,6 +658,8 @@
     }
 
     function backToGroups() {
+      multiSelectMode = false;
+      document.getElementById("multiSelectToggle").textContent = '☐ 多选';
       document.querySelectorAll('.group-item').forEach(i => i.classList.remove('active'));
       document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
       document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
@@ -576,6 +693,8 @@
     async function startPrivateChat(uid, name, el) {
       document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
       if (el) el.classList.add('active');
+      currentChatRoom = null;
+      currentChatRoomName = null;
       privateChatPeer = uid;
       privateChatPeerName = name;
       selectedMember = uid;
@@ -592,6 +711,8 @@
 
     async function loadPrivateMessages() {
       if (!privateChatPeer) return;
+      const container = document.getElementById("msgContainer");
+      container.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
       try {
         const msgs = await api("/api/messages?with=" + privateChatPeer);
         const blockedUids = blacklistCache.map(b => b.uid).filter(uid => uid !== currentUid);
@@ -611,15 +732,23 @@
                 : escapeHtml(m.content || "");
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
-          return '<div class="bubble ' + cls + '">'
+          return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
+            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(privateChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>')
+            + '<div class="bubble ' + cls + '" style="max-width:70%;">'
             + (!isMe ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(privateChatPeerName) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(privateChatPeerName) + '</div>' : '')
-            + '<div>' + content + '</div><div class="time">' + time + '</div></div>';
+            + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
         }).join("");
         if (msgs.length === 0) {
           container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(privateChatPeerName) + ' 聊天吧</p></div>';
         }
         container.scrollTop = container.scrollHeight;
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
+        if (e.message && (e.message.includes('无权访问') || e.message.includes('登录已过期'))) {
+          if (polling) { clearInterval(polling); polling = null; }
+        }
+      }
     }
 
     // ---------- Group Chat Room ----------
@@ -642,18 +771,27 @@
       loadGroupMessages();
       if (polling) clearInterval(polling);
       polling = setInterval(loadGroupMessages, 2000);
-
-      // Show group members who are in this chat
-      const msgContainer = document.getElementById("msgContainer");
-      msgContainer.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
     }
 
     async function loadGroupMessages() {
       if (!currentChatRoom) return;
+      const container = document.getElementById("msgContainer");
+      container.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
       try {
         const msgs = await api("/api/groups/" + currentChatRoom + "/messages");
         const blockedUids = blacklistCache.map(b => b.uid);
         const filtered = msgs.filter(m => !blockedUids.includes(m.sender));
+        // Show announcement banner
+        const annMsg = msgs.slice().reverse().find(m => m.msg_type === 'system' && m.content && m.content.includes('📢'));
+        const banner = document.getElementById("announcementBanner");
+        const dismissedKey = 'dismissed_ann_' + currentChatRoom;
+        if (annMsg && localStorage.getItem(dismissedKey) !== annMsg.id.toString()) {
+          document.getElementById("announcementBannerText").textContent = annMsg.content.replace(/^📢\s*/, '');
+          banner.style.display = 'flex';
+          banner.dataset.msgId = annMsg.id;
+        } else {
+          banner.style.display = 'none';
+        }
         const container = document.getElementById("msgContainer");
         container.innerHTML = filtered.map(m => {
           const isMe = m.sender === currentUid;
@@ -670,16 +808,24 @@
                 : escapeHtml(m.content || "");
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
-          return '<div class="bubble ' + cls + '">'
+          return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
+            + (!isMe && m.sender !== 'system' ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml((m.sender_name||m.sender).charAt(0)) + '</div>' : (isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>' : ''))
+            + '<div class="bubble ' + cls + '" style="max-width:70%;">'
             + (!isMe && m.sender !== 'system' ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(m.sender_name || m.sender) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
             + (isMe && m.sender !== 'system' ? '<div class="sender-name" style="text-align:right;">' + escapeHtml(m.sender_name || '我') + '</div>' : '')
-            + '<div>' + content + '</div><div class="time">' + time + '</div></div>';
+            + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
         }).join("");
         if (msgs.length === 0) {
           container.innerHTML = '<div class="empty-state"><p>暂无消息，发送第一条吧</p></div>';
         }
         container.scrollTop = container.scrollHeight;
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
+        if (e.message && (e.message.includes('无权访问') || e.message.includes('登录已过期'))) {
+          if (polling) { clearInterval(polling); polling = null; }
+        }
+      }
     }
 
     // ---------- Send message (private or group) ----------
@@ -765,74 +911,99 @@
       }
     }
 
-    // ---------- Add Members to Group ----------
-    async function showAddMemberModal() {
-      if (!selectedGroup) return;
-      await loadAllUsers();
-      const currentMemberUids = selectedGroup.members.map(m => m.uid);
-      const available = allUsers.filter(u => !currentMemberUids.includes(u.uid));
-      const list = document.getElementById("addMemberList");
-      list.innerHTML = available.map(u =>
-        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
-      ).join("");
-      if (available.length === 0) {
-        list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">所有用户已在群组中</p>';
-      }
-      showModal("addMemberModal");
+    // ---------- Multi-Select Remove ----------
+    function toggleMultiSelect() {
+      multiSelectMode = !multiSelectMode;
+      const btn = document.getElementById("multiSelectToggle");
+      btn.textContent = multiSelectMode ? '☑ 完成' : '☐ 多选';
+      if (selectedGroup) renderGroupDetail(selectedGroup);
     }
 
-    async function addMembers() {
+    function updateRemoveBtn() {
+      const checked = document.querySelectorAll(".multi-cb:checked");
+      const btn = document.getElementById("removeSelectedBtn");
+      btn.disabled = checked.length === 0;
+    }
+
+    function toggleSelectAllMembers(checked) {
+      document.querySelectorAll(".member-cb:not(:disabled)").forEach(cb => cb.checked = checked);
+      updateRemoveBtn();
+    }
+
+    function toggleSelectAllChats(checked) {
+      document.querySelectorAll(".chat-cb").forEach(cb => cb.checked = checked);
+      updateRemoveBtn();
+    }
+
+    async function removeSelectedItems() {
       if (!selectedGroup) return;
-      const checks = document.querySelectorAll("#addMemberList input:checked");
-      const uids = Array.from(checks).map(c => c.value);
-      if (uids.length === 0) { alert("请选择成员"); return; }
+      const memberUids = Array.from(document.querySelectorAll(".member-cb:checked")).map(cb => cb.value);
+      const chatIds = Array.from(document.querySelectorAll(".chat-cb:checked")).map(cb => cb.value);
+      if (memberUids.length === 0 && chatIds.length === 0) return;
       try {
-        await api("/api/user-groups/" + selectedGroup.group_id + "/members", {
+        await api("/api/user-groups/" + selectedGroup.group_id + "/batch-remove", {
           method: "POST",
-          body: JSON.stringify({ uids })
+          body: JSON.stringify({ member_uids: memberUids, chat_ids: chatIds })
         });
-        closeModal("addMemberModal");
+        multiSelectMode = false;
+        document.getElementById("multiSelectToggle").textContent = '☐ 多选';
         enterGroup(selectedGroup.group_id);
       } catch (e) { alert(e.message); }
     }
 
-    // ---------- Add Chat Room to Group ----------
-    async function showAddChatModal() {
+    // ---------- Unified Add Chat (members + chat rooms) ----------
+    async function showAddItemModal() {
       if (!selectedGroup) return;
+      const list = document.getElementById("addItemList");
+      const existingMemberUids = selectedGroup.members.map(m => m.uid);
+      const existingChatIds = selectedGroup.chats.map(c => c.chat_id);
+
+      // Fetch friends (available members)
+      let friendsHtml = '';
       try {
-        // Get existing group chats that the user is in
-        const groupChats = await api("/api/groups");
-        const existingChatIds = selectedGroup.chats.map(c => c.chat_id);
-        const available = groupChats.filter(g => !existingChatIds.includes(g.group_id));
-        const list = document.getElementById("addChatList");
-        list.innerHTML = available.map(g =>
-          '<label><input type="checkbox" data-chatid="' + g.group_id
-          + '" data-name="' + escapeHtml(g.name) + '" /> '
-          + escapeHtml(g.name) + '</label>'
+        const friends = await api("/api/friends");
+        const availableFriends = friends.filter(f => !existingMemberUids.includes(f.uid));
+        friendsHtml = availableFriends.map(f =>
+          '<label><input type="checkbox" class="add-member-cb" value="' + f.uid + '" /> ' + escapeHtml(f.name) + ' (' + f.uid + ')</label>'
         ).join("");
-        if (available.length === 0) {
-          list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">没有可添加的聊天室</p>';
-        }
-        showModal("addChatModal");
-      } catch (e) { console.error(e); }
+        if (availableFriends.length === 0) friendsHtml = '<p style="padding:6px;color:var(--text-muted);font-size:13px;">没有可选的联系人</p>';
+      } catch (e) { friendsHtml = '<p style="padding:6px;color:var(--text-muted);font-size:13px;">加载失败</p>'; }
+
+      // Fetch available chat rooms
+      let chatsHtml = '';
+      try {
+        const groupChats = await api("/api/groups");
+        const availableChats = groupChats.filter(g => !existingChatIds.includes(g.group_id));
+        chatsHtml = availableChats.map(g =>
+          '<label><input type="checkbox" class="add-chat-cb" data-chatid="' + g.group_id + '" data-name="' + escapeHtml(g.name) + '" /> ' + escapeHtml(g.name) + '</label>'
+        ).join("");
+        if (availableChats.length === 0) chatsHtml = '<p style="padding:6px;color:var(--text-muted);font-size:13px;">没有可添加的聊天室</p>';
+      } catch (e) { chatsHtml = '<p style="padding:6px;color:var(--text-muted);font-size:13px;">加载失败</p>'; }
+
+      list.innerHTML = '<div class="add-section-title">👤 联系人</div>' + friendsHtml
+        + '<div class="add-section-title" style="margin-top:8px;">💬 聊天室</div>' + chatsHtml;
+      showModal("addItemModal");
     }
 
-    async function addChatsToGroup() {
+    async function addItemsToGroup() {
       if (!selectedGroup) return;
-      const checks = document.querySelectorAll("#addChatList input:checked");
-      const chats = Array.from(checks).map(c => ({
-        chat_id: c.dataset.chatid,
-        chat_name: c.dataset.name
-      }));
-      if (chats.length === 0) { alert("请选择聊天室"); return; }
+      const memberChecks = document.querySelectorAll(".add-member-cb:checked");
+      const uids = Array.from(memberChecks).map(c => c.value);
+      const chatChecks = document.querySelectorAll(".add-chat-cb:checked");
+      const chats = Array.from(chatChecks).map(c => ({ chat_id: c.dataset.chatid, chat_name: c.dataset.name }));
+      if (uids.length === 0 && chats.length === 0) { alert("请选择要添加的项目"); return; }
       try {
-        for (const chat of chats) {
-          await api("/api/user-groups/" + selectedGroup.group_id + "/chats", {
-            method: "POST",
-            body: JSON.stringify({ chat_id: chat.chat_id, chat_name: chat.chat_name })
+        if (uids.length > 0) {
+          await api("/api/user-groups/" + selectedGroup.group_id + "/members", {
+            method: "POST", body: JSON.stringify({ uids })
           });
         }
-        closeModal("addChatModal");
+        for (const chat of chats) {
+          await api("/api/user-groups/" + selectedGroup.group_id + "/chats", {
+            method: "POST", body: JSON.stringify({ chat_id: chat.chat_id, chat_name: chat.chat_name })
+          });
+        }
+        closeModal("addItemModal");
         enterGroup(selectedGroup.group_id);
       } catch (e) { alert(e.message); }
     }
@@ -880,6 +1051,8 @@
         const myRole = detail.members.find(m => m.uid === currentUid)?.role;
         const isAdmin = myRole === 'admin' || myRole === 'manager';
         document.getElementById("chatDetailAdminActions").style.display = isAdmin ? 'inline' : 'none';
+        // Dissolve button only for admin (群主)
+        document.getElementById("dissolveChatBtn").style.display = myRole === 'admin' ? 'inline-block' : 'none';
 
         const memberList = document.getElementById("chatDetailMembers");
         memberList.innerHTML = detail.members.map(m => {
@@ -916,6 +1089,27 @@
         currentChatRoom = null;
         currentChatRoomName = "";
         if (selectedGroup) enterGroup(selectedGroup.group_id);
+      } catch (e) { alert(e.message); }
+    }
+
+    function dismissAnnouncement() {
+      if (currentChatRoom) {
+        const banner = document.getElementById("announcementBanner");
+        localStorage.setItem('dismissed_ann_' + currentChatRoom, banner.dataset.msgId || '1');
+        banner.style.display = 'none';
+      }
+    }
+
+    async function dissolveChatRoom() {
+      if (!currentChatRoom) return;
+      if (!confirm("确定解散此聊天室？所有成员将被移除，消息保留。")) return;
+      try {
+        await api("/api/groups/" + currentChatRoom + "/dissolve", { method: "POST" });
+        closeModal("chatDetailModal");
+        currentChatRoom = null;
+        currentChatRoomName = "";
+        if (selectedGroup) enterGroup(selectedGroup.group_id);
+        alert("聊天室已解散");
       } catch (e) { alert(e.message); }
     }
 
@@ -1051,7 +1245,8 @@
         document.getElementById("memberInfoDesc").textContent = '暂无简介';
       }
       updateBlockBtn();
-      
+      updateFriendBtn();
+
       showModal("memberInfoModal");
     }
 
@@ -1064,17 +1259,82 @@
 
     async function memberInfoStartChat() {
       if (!memberInfoTarget) return;
-      closeModal("memberInfoModal");
       const uid = memberInfoTarget.uid;
       const name = memberInfoTarget.name;
-      // Navigate to private chat - look for a group member that has this uid
-      // Use startPrivateChat function
-      if (typeof startPrivateChat === 'function') {
-        startPrivateChat(uid, name);
+      openPopupChat(uid, name);
+    }
+
+    // ---------- Popup Private Chat ----------
+    let popupChatPeer = null;
+    let popupChatPeerName = "";
+    let popupPolling = null;
+
+    async function openPopupChat(uid, name) {
+      popupChatPeer = uid;
+      popupChatPeerName = name;
+      document.getElementById("popupChatTitle").textContent = '💬 ' + name;
+      document.getElementById("popupChatInput").value = "";
+      document.getElementById("popupChatMessages").innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
+      showModal("popupChatModal");
+      closeModal("memberInfoModal");
+      loadPopupChatMessages();
+      if (popupPolling) clearInterval(popupPolling);
+      popupPolling = setInterval(loadPopupChatMessages, 2000);
+    }
+
+    function closePopupChat() {
+      if (popupPolling) { clearInterval(popupPolling); popupPolling = null; }
+      popupChatPeer = null;
+      popupChatPeerName = "";
+      closeModal("popupChatModal");
+    }
+
+    async function loadPopupChatMessages() {
+      if (!popupChatPeer) return;
+      try {
+        const msgs = await api("/api/messages?with=" + popupChatPeer);
+        const container = document.getElementById("popupChatMessages");
+        const blockedUids = blacklistCache.map(b => b.uid);
+        const filtered = msgs.filter(m => !blockedUids.includes(m.sender) && !blockedUids.includes(m.receiver));
+        container.innerHTML = filtered.map(m => {
+          if (m.msg_type === 'system') return renderSystemMessage(m.content);
+          const isMe = m.sender === currentUid;
+          const cls = isMe ? "sent" : "received";
+          let content = m.revoked
+            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
+            : m.msg_type === "image" ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
+            : m.msg_type === "file" ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
+            : escapeHtml(m.content || "");
+          const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
+            { hour: "2-digit", minute: "2-digit" });
+          return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
+            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(popupChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>')
+            + '<div class="bubble ' + cls + '" style="max-width:70%;">'
+            + (!isMe ? '<div class="sender-name">' + escapeHtml(popupChatPeerName) + '</div>' : '')
+            + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
+        }).join("");
+        if (filtered.length === 0) {
+          container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(popupChatPeerName) + ' 聊天吧</p></div>';
+        }
+        container.scrollTop = container.scrollHeight;
+      } catch (e) {
+        console.error("loadPopupChatMessages:", e);
+        container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
       }
-      // If we were in a chat room, switch to private chat
-      currentChatRoom = null;
-      currentChatRoomName = null;
+    }
+
+    async function sendPopupChatMsg() {
+      const input = document.getElementById("popupChatInput");
+      const text = input.value.trim();
+      if (!text || !popupChatPeer) return;
+      try {
+        await api("/api/send", {
+          method: "POST",
+          body: JSON.stringify({ receiver: popupChatPeer, content: text })
+        });
+        input.value = "";
+        loadPopupChatMessages();
+      } catch (e) { alert(e.message); }
     }
     
     // ---- Shared helpers ----
@@ -1119,8 +1379,63 @@
       } catch (e) { alert(e.message); }
     }
 
+    async function updateFriendBtn() {
+      const btn = document.getElementById("memberInfoFriendBtn");
+      if (!memberInfoTarget || memberInfoTarget.uid === currentUid) {
+        btn.style.display = 'none';
+        return;
+      }
+      try {
+        const friends = await api("/api/friends");
+        const isFriend = friends.some(f => f.uid === memberInfoTarget.uid);
+        if (isFriend) {
+          btn.textContent = '❤️ 好友';
+          btn.style.color = 'var(--primary)';
+          btn.style.borderColor = 'var(--primary)';
+          btn.onclick = () => memberInfoRemoveFriend();
+        } else {
+          btn.textContent = '🤍 加好友';
+          btn.style.color = 'var(--primary)';
+          btn.style.borderColor = 'var(--primary)';
+          btn.onclick = () => { showFriendRequestModal(memberInfoTarget.uid, memberInfoTarget.name); };
+        }
+        btn.style.display = 'inline-block';
+      } catch (e) {
+        btn.style.display = 'none';
+      }
+    }
+
+    async function memberInfoRemoveFriend() {
+      if (!memberInfoTarget) return;
+      try {
+        await api("/api/friends/remove", { method: "POST", body: JSON.stringify({ uid: memberInfoTarget.uid }) });
+        updateFriendBtn();
+      } catch (e) { alert(e.message); }
+    }
+
     // ---------- Context Menu (Right-click) ----------
     // Handled via contextmenu event on message sender names and member items
+
+    // ---------- Friend Request ----------
+    let friendReqTargetUid = null;
+    function showFriendRequestModal(uid, name) {
+      friendReqTargetUid = uid;
+      document.getElementById("friendReqTargetName").textContent = name;
+      document.getElementById("friendReqMessage").value = "";
+      showModal("friendRequestModal");
+    }
+    async function sendFriendRequest() {
+      if (!friendReqTargetUid) return;
+      const message = document.getElementById("friendReqMessage").value.trim();
+      try {
+        await api("/api/friend-request", {
+          method: "POST",
+          body: JSON.stringify({ to_uid: friendReqTargetUid, message })
+        });
+        closeModal("friendRequestModal");
+        alert("好友申请已发送");
+      } catch (e) { alert(e.message); }
+    }
 
     // ---------- Friend Management (for system groups) ----------
     async function toggleFriend(uid, name) {
