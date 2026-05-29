@@ -147,6 +147,25 @@
       border-radius: 24px; font-size: 14px; outline: none;
     }
     .input-bar input:focus { border-color: var(--primary); }
+    .plus-btn {
+      background: var(--bg); border: none; border-radius: 50%;
+      width: 36px; height: 36px; font-size: 20px; cursor: pointer;
+      flex-shrink: 0; line-height: 36px; text-align: center;
+      color: var(--text-muted); transition: 0.15s;
+    }
+    .plus-btn:hover { background: #e2e8f0; color: var(--text); }
+    .plus-menu {
+      position: absolute; bottom: 60px; left: 16px;
+      background: white; border: 1px solid var(--border);
+      border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      padding: 4px; z-index: 500; display: none; min-width: 140px;
+    }
+    .plus-menu.active { display: block; }
+    .plus-menu div {
+      padding: 10px 14px; font-size: 13px; cursor: pointer;
+      border-radius: 8px; display: flex; align-items: center; gap: 8px;
+    }
+    .plus-menu div:hover { background: #f1f5f9; }
     .send-btn {
       background: var(--primary); color: white; border: none;
       border-radius: 50%; width: 36px; height: 36px;
@@ -186,6 +205,8 @@
       font-size: 14px; cursor: pointer;
     }
     .modal .btn-primary { background: var(--primary); color: white; }
+    #forwardUserSearch { margin: 4px 8px; width: calc(100% - 16px); }
+    #createChatMemberSearch { margin: 4px 8px; width: calc(100% - 16px); }
     .modal .btn-cancel { background: var(--bg); color: var(--text); }
     .modal .member-list-add {
       max-height: 200px; overflow-y: auto; border: 1px solid var(--border);
@@ -258,10 +279,20 @@
         </p>
       </div>
     </div>
-    <div class="input-bar" id="inputBar" style="display:none">
+    <div class="input-bar" id="inputBar" style="display:none;position:relative;">
+      <button class="plus-btn" id="plusBtn" onclick="togglePlusMenu()">+</button>
+      <div class="plus-menu" id="plusMenu">
+        <div onclick="selectFile('image')">📷 图片</div>
+        <div onclick="selectFile('file')">📎 文件</div>
+        <div onclick="selectFile('video')">🎬 视频</div>
+        <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+        <div onclick="startCallFromPlus('audio')">🎤 语音通话</div>
+        <div onclick="startCallFromPlus('video')">📹 视频通话</div>
+      </div>
       <input id="textInput" placeholder="输入消息..." disabled
              onkeypress="if (event.key === 'Enter') sendCurrentMessage();" />
       <button class="send-btn" onclick="sendCurrentMessage()">➤</button>
+      <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)" />
     </div>
   </div>
 
@@ -280,6 +311,7 @@
         <option value="办公">办公</option>
       </select>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择成员（可选）:</p>
+      <input id="newGroupMemberSearch" placeholder="搜索学号/姓名..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:6px;" oninput="filterNewGroupMembers(this.value)" />
       <div class="member-list-add" id="newGroupMembers"></div>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;margin-top:8px;">选择聊天室（可选）:</p>
       <div class="member-list-add" id="newGroupChats"></div>
@@ -309,6 +341,7 @@
       <h3>💬 创建聊天室</h3>
       <input id="newChatName" placeholder="聊天室名称" />
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择成员（可选，范围为所有用户）:</p>
+      <input id="createChatMemberSearch" placeholder="搜索学号/姓名..." oninput="filterCreateChatMembers(this.value)" />
       <div class="member-list-add" id="newChatMembers"></div>
       <div class="btn-row">
         <button class="btn-cancel" onclick="closeModal('createChatModal')">取消</button>
@@ -337,6 +370,12 @@
         </span>
       </div>
       <div id="chatDetailMembers" style="margin-bottom:12px;max-height:250px;overflow-y:auto;"></div>
+
+      <!-- Call notify toggle -->
+      <div id="chatDetailCallSetting" style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-top:1px solid var(--border);margin-bottom:8px;">
+        <span style="font-size:13px;color:var(--text);">📞 接收该聊天室的通话邀请</span>
+        <span id="chatDetailCallToggle"></span>
+      </div>
 
       <div class="btn-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;justify-content:space-between;">
         <div>
@@ -395,6 +434,11 @@
         <p style="font-size:14px;color:var(--text-muted);" id="memberInfoRole"></p>
         <p style="font-size:14px;color:#475569;margin-top:12px;padding:8px 16px;background:#f1f5f9;border-radius:8px;" id="memberInfoDesc">暂无简介</p>
       </div>
+      <!-- Private chat call notify toggle -->
+      <div id="privateCallSetting" style="display:none;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:8px;border-top:1px solid var(--border);padding-top:8px;">
+        <span style="font-size:13px;color:var(--text);">📞 接收该联系人的通话邀请</span>
+        <span id="privateCallToggle"></span>
+      </div>
       <div class="btn-row" style="justify-content:center;gap:12px;">
         <button class="btn-primary" id="memberInfoChatBtn" onclick="memberInfoStartChat()">💬 聊天</button>
         <button class="btn-cancel" id="memberInfoBlockBtn" style="color:var(--danger);border:1px solid var(--danger);" onclick="memberInfoToggleBlock()">拉黑</button>
@@ -419,10 +463,117 @@
     </div>
   </div>
 
-  <!-- Context Menu -->
+  <!-- Context Menu (for members/chats) -->
   <div class="ctx-menu" id="ctxMenu">
     <div class="ctx-item" id="ctxDetail" onclick="ctxHandleDetail()">📋 详情</div>
     <div class="ctx-item danger" id="ctxRemove" onclick="ctxHandleRemove()">🚪 移出本群组</div>
+  </div>
+
+  <!-- Context Menu (for messages) -->
+  <div class="ctx-menu" id="msgCtxMenu">
+    <div class="ctx-item" id="msgCtxRecall" onclick="msgCtxRecall()">↩️ 撤回</div>
+    <div class="ctx-item" id="msgCtxForward" onclick="msgCtxForward()">↗️ 转发</div>
+    <div class="ctx-item" id="msgCtxMulti" onclick="msgCtxMulti()">☐ 多选</div>
+  </div>
+
+  <!-- Modal: Forward Messages -->
+  <div class="modal-overlay" id="forwardModal" onclick="closeForwardModal()">
+    <div class="modal" style="width:500px;max-height:80vh;display:flex;flex-direction:column;" onclick="event.stopPropagation()">
+      <h3>↗️ 转发消息</h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;" id="forwardModalDesc">选择转发目标</p>
+      <div style="display:flex;gap:12px;flex:1;min-height:0;max-height:400px;">
+        <div style="flex:1;border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;">
+          <div style="padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+            <span>💬 聊天室</span>
+            <span onclick="toggleFwdChats(true)" style="cursor:pointer;color:var(--primary);font-weight:400;">全选</span>
+          </div>
+          <div id="forwardChatList" style="flex:1;overflow-y:auto;padding:4px;"></div>
+        </div>
+        <div style="flex:1;border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;">
+          <div style="padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+            <span>👤 用户</span>
+            <span onclick="toggleFwdUsers(true)" style="cursor:pointer;color:var(--primary);font-weight:400;">全选</span>
+          </div>
+          <input id="forwardUserSearch" placeholder="搜索学号/姓名..." oninput="filterForwardUsers(this.value)" />
+          <div id="forwardUserList" style="flex:1;overflow-y:auto;padding:4px;"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <button class="btn-cancel" onclick="closeForwardModal()">取消</button>
+        <button class="btn-primary" onclick="doForward('merge')">合并转发</button>
+        <button class="btn-primary" onclick="doForward('individual')">逐条转发</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Media Preview (view full image / play video) -->
+  <div class="modal-overlay" id="mediaPreviewModal" onclick="closeModal('mediaPreviewModal')">
+    <div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center;">
+      <span onclick="event.stopPropagation();closeModal('mediaPreviewModal')" style="position:fixed;top:20px;right:30px;font-size:32px;color:white;cursor:pointer;z-index:1001;">×</span>
+      <img id="mediaPreviewImg" style="display:none;max-width:90vw;max-height:90vh;border-radius:8px;" />
+      <video id="mediaPreviewVideo" style="display:none;max-width:90vw;max-height:90vh;border-radius:8px;" controls></video>
+    </div>
+  </div>
+
+  <!-- Modal: Incoming Call -->
+  <div class="modal-overlay" id="incomingCallModal" onclick="">
+    <div class="modal" style="width:360px;text-align:center;" onclick="event.stopPropagation()">
+      <div style="padding:30px 20px;">
+        <div style="font-size:48px;margin-bottom:12px;">📞</div>
+        <div style="font-size:20px;font-weight:600;margin-bottom:4px;" id="incomingCallName"></div>
+        <div style="font-size:14px;color:var(--text-muted);margin-bottom:20px;" id="incomingCallType"></div>
+        <div style="display:flex;gap:20px;justify-content:center;">
+          <button onclick="rejectCall()" style="width:80px;height:80px;border-radius:50%;border:none;background:#fee2e2;color:#ef4444;font-size:28px;cursor:pointer;transition:all .2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">✕</button>
+          <button onclick="acceptCall()" style="width:80px;height:80px;border-radius:50%;border:none;background:#dcfce7;color:#22c55e;font-size:28px;cursor:pointer;transition:all .2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">✓</button>
+        </div>
+        <div style="margin-top:16px;font-size:13px;color:var(--text-muted);">
+          <span id="incomingCallReject" style="margin-right:40px;">拒绝</span>
+          <span id="incomingCallAccept">接听</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Call Window -->
+  <div class="modal-overlay" id="callWindowModal" style="background:#0f0f23;" onclick="">
+    <div style="width:100%;height:100vh;display:flex;flex-direction:column;position:relative;" onclick="event.stopPropagation()">
+      <!-- Remote video (full background) -->
+      <video id="callRemoteVideo" style="flex:1;width:100%;object-fit:contain;background:#1a1a2e;display:none;"></video>
+      <div id="callRemoteAvatar" style="flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;color:white;">
+        <div style="width:100px;height:100px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:40px;color:white;margin-bottom:16px;" id="callRemoteAvatarChar"></div>
+        <div style="font-size:22px;font-weight:600;" id="callRemoteName"></div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-top:4px;" id="callStatusText">连接中...</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px;" id="callDuration">00:00</div>
+      </div>
+      <!-- Local video (small PiP) -->
+      <video id="callLocalVideo" style="position:absolute;top:20px;right:20px;width:160px;height:120px;border-radius:12px;object-fit:cover;border:2px solid rgba(255,255,255,0.3);background:#333;display:none;" muted playsinline></video>
+      <!-- Controls -->
+      <div style="position:absolute;bottom:40px;left:0;right:0;display:flex;justify-content:center;gap:32px;padding:16px;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <button id="callMuteBtn" onclick="toggleCallMute()" style="width:56px;height:56px;border-radius:50%;border:none;background:rgba(255,255,255,0.15);color:white;font-size:22px;cursor:pointer;transition:all .2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">🎤</button>
+          <span style="font-size:11px;color:rgba(255,255,255,0.7);">静音</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <button id="callVideoBtn" onclick="toggleCallVideo()" style="width:56px;height:56px;border-radius:50%;border:none;background:rgba(255,255,255,0.15);color:white;font-size:22px;cursor:pointer;transition:all .2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">📹</button>
+          <span style="font-size:11px;color:rgba(255,255,255,0.7);">摄像头</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <button onclick="endCall()" style="width:64px;height:64px;border-radius:50%;border:none;background:#ef4444;color:white;font-size:28px;cursor:pointer;transition:all .2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">📞</button>
+          <span style="font-size:11px;color:#fca5a5;">挂断</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Merge Forward Detail -->
+  <div class="modal-overlay" id="mergeForwardModal" onclick="closeModal('mergeForwardModal')">
+    <div class="modal" style="width:500px;max-height:80vh;display:flex;flex-direction:column;" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <span style="font-weight:600;font-size:16px;">📩 合并转发</span>
+        <span onclick="closeModal('mergeForwardModal')" style="cursor:pointer;font-size:20px;color:var(--text-muted);">&times;</span>
+      </div>
+      <div id="mergeForwardContent" style="flex:1;overflow-y:auto;padding:12px 20px;"></div>
+    </div>
   </div>
 
   <!-- Modal: Popup Private Chat -->
@@ -449,12 +600,85 @@
     let selectedGroup = null;     // current group object
     let selectedMember = null;    // current member for private chat
     let selectedChat = null;     // current chat room for group chat
-    let polling = null;
+    let eventSource = null;
     let allUsers = [];
     let multiSelectMode = false;
+    let currentUserRole = ''; // role in current chat room
 
     // Context menu state
     let ctxTarget = null; // { type: 'member'|'chat', uid/chatId, name }
+    let msgCtxTarget = null; // { id, type:'private'|'group', sender, timestamp, content }
+
+    // ---------- Message Context Menu ----------
+    function showMsgContextMenu(e, msg) {
+      e.preventDefault();
+      msgCtxTarget = msg;
+      const menu = document.getElementById("msgCtxMenu");
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+      menu.style.display = 'block';
+
+      // Show/hide recall option
+      const recallItem = document.getElementById("msgCtxRecall");
+      const isOwn = msg.sender === currentUid;
+      const isAdmin = msg.userRole === 'admin' || msg.userRole === 'manager';
+      const withinTime = (Date.now() / 1000 - msg.timestamp) < 120;
+      const canRecall = (isOwn && (isAdmin || withinTime)) || (!isOwn && isAdmin && msg.type === 'group');
+      recallItem.style.display = canRecall ? 'flex' : 'none';
+    }
+
+    function hideMsgContextMenu() {
+      document.getElementById("msgCtxMenu").style.display = 'none';
+      msgCtxTarget = null;
+    }
+
+    async function msgCtxRecall() {
+      const m = msgCtxTarget;
+      hideMsgContextMenu();
+      if (!m) return;
+      try {
+        if (m.type === 'private') {
+          await api('/api/messages/revoke/' + m.id, { method: 'POST' });
+          loadPrivateMessages();
+        } else {
+          await api('/api/groups/revoke/' + m.id, { method: 'POST' });
+          loadGroupMessages();
+        }
+      } catch (e) { alert(e.message); }
+    }
+
+    function msgCtxForward() {
+      const m = msgCtxTarget;
+      hideMsgContextMenu();
+      if (!m) return;
+      // Fetch full message data
+      _fetchAndForward([m]);
+    }
+
+    async function _fetchAndForward(msgRefs) {
+      try {
+        let allMsgs = [];
+        if (currentChatRoom) {
+          allMsgs = await api("/api/groups/" + currentChatRoom + "/messages");
+        } else if (privateChatPeer) {
+          allMsgs = await api("/api/messages?with=" + privateChatPeer);
+        }
+        const fullMsgs = msgRefs.map(ref => allMsgs.find(m => m.id.toString() === ref.id.toString())).filter(Boolean);
+        if (fullMsgs.length === 0) { alert("未找到消息"); return; }
+        // For private messages, fill sender_name
+        fullMsgs.forEach(m => {
+          if (!m.sender_name) {
+            m.sender_name = m.sender === currentUid ? (localStorage.getItem('name') || '我') : (privateChatPeerName || m.sender);
+          }
+        });
+        showForwardModal(fullMsgs);
+      } catch(e) { alert('获取消息失败'); }
+    }
+
+    function msgCtxMulti() {
+      hideMsgContextMenu();
+      enterMultiSelectMode();
+    }
 
     // ---------- Context Menu ----------
     function showContextMenu(e, type, id, name) {
@@ -507,11 +731,20 @@
       } catch (e) { alert(e.message); }
     }
 
-    // Hide context menu on any click
+    // Hide context menus on any click
     document.addEventListener('click', function(e) {
       const menu = document.getElementById("ctxMenu");
       if (menu.style.display === 'block' && !menu.contains(e.target)) {
         hideContextMenu();
+      }
+      const mcm = document.getElementById("msgCtxMenu");
+      if (mcm.style.display === 'block' && !mcm.contains(e.target)) {
+        hideMsgContextMenu();
+      }
+      // Hide plus menu
+      const pm = document.getElementById("plusMenu");
+      if (pm.classList.contains('active') && !pm.contains(e.target) && e.target.id !== 'plusBtn') {
+        pm.classList.remove('active');
       }
     });
 
@@ -654,7 +887,7 @@
       `;
       document.getElementById("chatHeader").textContent = "📁 " + detail.name;
       document.getElementById("inputBar").style.display = "none";
-      if (polling) { clearInterval(polling); polling = null; }
+      if (eventSource) { eventSource.close(); eventSource = null; }
     }
 
     function backToGroups() {
@@ -672,7 +905,6 @@
       document.getElementById("detailToolbar").style.display = "none";
       document.getElementById("chatHeader").textContent = "👥 选择一个群组";
       document.getElementById("inputBar").style.display = "none";
-      if (polling) { clearInterval(polling); polling = null; }
       document.getElementById("msgContainer").innerHTML = `
         <div class="empty-state">
           <h3>📁 群组管理</h3>
@@ -699,14 +931,21 @@
       privateChatPeerName = name;
       selectedMember = uid;
       selectedChat = null;
-      document.getElementById("chatHeader").innerHTML = '<span>💬 ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showMemberInfoFromPrivate()">... 详情</button>';
+      currentUserRole = '';
+      document.getElementById("chatHeader").innerHTML = '<span>💬 ' + escapeHtml(name) + '</span><span style="flex:1;"></span><button class="detail-btn" onclick="startCall(\'' + uid + '\',\'' + escapeHtml(name) + '\',\'audio\')" title="语音通话" style="margin-right:4px;">🎤</button><button class="detail-btn" onclick="startCall(\'' + uid + '\',\'' + escapeHtml(name) + '\',\'video\')" title="视频通话" style="margin-right:4px;">📹</button><button class="detail-btn" onclick="showMemberInfoFromPrivate()">... 详情</button>';
       document.getElementById("textInput").disabled = false;
       document.getElementById("textInput").placeholder = "输入消息...";
       document.getElementById("inputBar").style.display = "flex";
       loadBlacklist();
       loadPrivateMessages();
-      if (polling) clearInterval(polling);
-      polling = setInterval(loadPrivateMessages, 2000);
+      connectSSE('private', uid, loadPrivateMessages);
+    }
+
+    function connectSSE(mode, target, onMessage) {
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource('/api/stream?uid=' + currentUid + '&token=' + token + '&mode=' + mode + '&target=' + target + '&after=0');
+      eventSource.onmessage = function(e) { if (e.data) { onMessage(); } };
+      eventSource.onerror = function() { /* auto-reconnect */ };
     }
 
     async function loadPrivateMessages() {
@@ -721,20 +960,17 @@
           if (m.msg_type === 'system') {
             return renderSystemMessage(m.content);
           }
+          if (m.revoked) {
+            return renderSystemMessage(m.content);
+          }
           const isMe = m.sender === currentUid;
           const cls = isMe ? "sent" : "received";
-          let content = m.revoked
-            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
-            : m.msg_type === "image"
-              ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
-              : m.msg_type === "file"
-                ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
-                : escapeHtml(m.content || "");
+          let content = renderMessageContent(m);
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
             + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(privateChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>')
-            + '<div class="bubble ' + cls + '" style="max-width:70%;">'
+            + '<div class="bubble ' + cls + '" style="max-width:70%;cursor:context-menu;" data-msg-id="' + m.id + '" oncontextmenu="showMsgContextMenu(event,{id:' + m.id + ',type:\'private\',sender:\'' + m.sender + '\',timestamp:' + m.timestamp + '})">'
             + (!isMe ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(privateChatPeerName) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(privateChatPeerName) + '</div>' : '')
             + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
         }).join("");
@@ -742,12 +978,10 @@
           container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(privateChatPeerName) + ' 聊天吧</p></div>';
         }
         container.scrollTop = container.scrollHeight;
+        captureVideoThumbnails();
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
-        if (e.message && (e.message.includes('无权访问') || e.message.includes('登录已过期'))) {
-          if (polling) { clearInterval(polling); polling = null; }
-        }
       }
     }
 
@@ -763,14 +997,18 @@
       currentChatRoomName = name;
       selectedChat = chatId;
       selectedMember = null;
-      document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
+      document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><span style="flex:1;"></span><button class="detail-btn" onclick="groupCall(\'' + chatId + '\',\'audio\')" title="语音通话" style="margin-right:4px;">🎤</button><button class="detail-btn" onclick="groupCall(\'' + chatId + '\',\'video\')" title="视频通话" style="margin-right:4px;">📹</button><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
       document.getElementById("textInput").disabled = false;
       document.getElementById("textInput").placeholder = "输入群消息...";
       document.getElementById("inputBar").style.display = "flex";
+      try {
+        const d = await api('/api/groups/' + chatId + '/detail');
+        const me = d.members.find(m => m.uid === currentUid);
+        currentUserRole = me ? me.role : '';
+      } catch(e) { currentUserRole = ''; }
       loadBlacklist();
       loadGroupMessages();
-      if (polling) clearInterval(polling);
-      polling = setInterval(loadGroupMessages, 2000);
+      connectSSE('group', chatId, loadGroupMessages);
     }
 
     async function loadGroupMessages() {
@@ -798,19 +1036,16 @@
           if (m.msg_type === 'system') {
             return renderSystemMessage(m.content);
           }
+          if (m.revoked) {
+            return renderSystemMessage(m.content);
+          }
           const cls = isMe ? "sent" : "received";
-          let content = m.revoked
-            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
-            : m.msg_type === "image"
-              ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
-              : m.msg_type === "file"
-                ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
-                : escapeHtml(m.content || "");
+          let content = renderMessageContent(m);
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
             + (!isMe && m.sender !== 'system' ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml((m.sender_name||m.sender).charAt(0)) + '</div>' : (isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>' : ''))
-            + '<div class="bubble ' + cls + '" style="max-width:70%;">'
+            + '<div class="bubble ' + cls + '" style="max-width:70%;cursor:context-menu;" data-msg-id="' + m.id + '" oncontextmenu="showMsgContextMenu(event,{id:' + m.id + ',type:\'group\',sender:\'' + m.sender + '\',timestamp:' + m.timestamp + ',userRole:\'' + currentUserRole + '\'})">'
             + (!isMe && m.sender !== 'system' ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(m.sender_name || m.sender) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
             + (isMe && m.sender !== 'system' ? '<div class="sender-name" style="text-align:right;">' + escapeHtml(m.sender_name || '我') + '</div>' : '')
             + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
@@ -819,12 +1054,64 @@
           container.innerHTML = '<div class="empty-state"><p>暂无消息，发送第一条吧</p></div>';
         }
         container.scrollTop = container.scrollHeight;
+        captureVideoThumbnails();
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
-        if (e.message && (e.message.includes('无权访问') || e.message.includes('登录已过期'))) {
-          if (polling) { clearInterval(polling); polling = null; }
+      }
+    }
+
+    // ---------- Plus Menu (image/file/video upload) ----------
+    function togglePlusMenu() {
+      document.getElementById("plusMenu").classList.toggle("active");
+    }
+
+    function selectFile(type) {
+      document.getElementById("plusMenu").classList.remove("active");
+      const input = document.getElementById("fileInput");
+      const acceptMap = {
+        'image': 'image/jpeg,image/png,image/gif,image/webp',
+        'video': 'video/mp4',
+        'file': '.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.txt,.mp3,.wav'
+      };
+      input.accept = acceptMap[type] || '';
+      input.dataset.msgType = type;
+      input.value = '';
+      input.click();
+    }
+
+    async function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 500 * 1024 * 1024) {
+        alert('文件大小不能超过 500MB');
+        return;
+      }
+      const msgType = e.target.dataset.msgType || 'file';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('msg_type', msgType);
+      formData.append('content', '');
+
+      try {
+        if (currentChatRoom) {
+          // Send to group chat
+          await api('/api/groups/' + currentChatRoom + '/send', {
+            method: 'POST',
+            body: formData
+          });
+          loadGroupMessages();
+        } else if (privateChatPeer) {
+          // Send to private chat
+          formData.append('receiver', privateChatPeer);
+          await api('/api/send', {
+            method: 'POST',
+            body: formData
+          });
+          loadPrivateMessages();
         }
+      } catch (err) {
+        alert('上传失败: ' + err.message);
       }
     }
 
@@ -885,7 +1172,26 @@
       }
 
       document.getElementById("newGroupName").value = "";
+      document.getElementById("newGroupMemberSearch").value = "";
       showModal("createGroupModal");
+    }
+
+    function filterNewGroupMembers(q) {
+      const trimmed = q.trim().toLowerCase();
+      const list = document.getElementById("newGroupMembers");
+      if (!trimmed) {
+        list.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
+          '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+        ).join("");
+        return;
+      }
+      const filtered = allUsers.filter(u => u.uid !== currentUid && (
+        u.uid.toString().toLowerCase().includes(trimmed) ||
+        (u.name || '').toLowerCase().includes(trimmed)
+      ));
+      list.innerHTML = filtered.length
+        ? filtered.map(u => '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>').join("")
+        : '<p style="padding:8px;color:var(--text-muted);font-size:13px;">无匹配用户</p>';
     }
 
     async function createGroup() {
@@ -1012,12 +1318,31 @@
     async function showCreateChatModal() {
       if (!selectedGroup) return;
       await loadAllUsers();
-      const memberList = document.getElementById("newChatMembers");
-      memberList.innerHTML = allUsers.filter(u => u.uid !== currentUid).map(u =>
-        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
-      ).join("");
+      document.getElementById("createChatMemberSearch").value = '';
+      renderCreateChatMembers(allUsers.filter(u => u.uid !== currentUid));
       document.getElementById("newChatName").value = "";
       showModal("createChatModal");
+    }
+
+    function renderCreateChatMembers(users) {
+      const memberList = document.getElementById("newChatMembers");
+      if (users.length === 0) {
+        memberList.innerHTML = '<p style="padding:8px;color:var(--text-muted);font-size:13px;">无匹配用户</p>';
+        return;
+      }
+      memberList.innerHTML = users.map(u =>
+        '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
+      ).join("");
+    }
+
+    function filterCreateChatMembers(q) {
+      const trimmed = q.trim().toLowerCase();
+      const all = allUsers.filter(u => u.uid !== currentUid);
+      if (!trimmed) { renderCreateChatMembers(all); return; }
+      renderCreateChatMembers(all.filter(u =>
+        u.uid.toString().toLowerCase().includes(trimmed) ||
+        (u.name || '').toLowerCase().includes(trimmed)
+      ));
     }
 
     async function createChatInGroup() {
@@ -1076,6 +1401,8 @@
             '</div>' +
           '</div>';
         }).join("");
+        // Call notify toggle
+        renderChatCallNotifyToggle(detail);
         showModal("chatDetailModal");
       } catch (e) { alert(e.message); }
     }
@@ -1164,7 +1491,7 @@
         closeModal("renameChatModal");
         showChatDetail();
         // Update header
-        document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
+        document.getElementById("chatHeader").innerHTML = '<span># ' + escapeHtml(name) + '</span><span style="flex:1;"></span><button class="detail-btn" onclick="groupCall(\'' + currentChatRoom + '\',\'audio\')" title="语音通话" style="margin-right:4px;">🎤</button><button class="detail-btn" onclick="groupCall(\'' + currentChatRoom + '\',\'video\')" title="视频通话" style="margin-right:4px;">📹</button><button class="detail-btn" onclick="showChatDetail()">... 详情</button>';
       } catch (e) { alert(e.message); }
     }
 
@@ -1246,6 +1573,7 @@
       }
       updateBlockBtn();
       updateFriendBtn();
+      renderPrivateCallNotifyToggle();
 
       showModal("memberInfoModal");
     }
@@ -1298,13 +1626,10 @@
         const filtered = msgs.filter(m => !blockedUids.includes(m.sender) && !blockedUids.includes(m.receiver));
         container.innerHTML = filtered.map(m => {
           if (m.msg_type === 'system') return renderSystemMessage(m.content);
+          if (m.revoked) return renderSystemMessage(m.content);
           const isMe = m.sender === currentUid;
           const cls = isMe ? "sent" : "received";
-          let content = m.revoked
-            ? '<div style="font-style:italic;opacity:.6">已撤回</div>'
-            : m.msg_type === "image" ? '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;">'
-            : m.msg_type === "file" ? '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>'
-            : escapeHtml(m.content || "");
+          let content = renderMessageContent(m);
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
@@ -1317,6 +1642,7 @@
           container.innerHTML = '<div class="empty-state"><p>开始和 ' + escapeHtml(popupChatPeerName) + ' 聊天吧</p></div>';
         }
         container.scrollTop = container.scrollHeight;
+        captureVideoThumbnails();
       } catch (e) {
         console.error("loadPopupChatMessages:", e);
         container.innerHTML = '<div class="empty-state"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
@@ -1337,12 +1663,94 @@
       } catch (e) { alert(e.message); }
     }
     
+    // ---- Media Preview ----
+    function previewMedia(filePath, type) {
+      document.getElementById("mediaPreviewImg").style.display = 'none';
+      document.getElementById("mediaPreviewVideo").style.display = 'none';
+      if (type === 'video') {
+        const v = document.getElementById("mediaPreviewVideo");
+        v.src = filePath;
+        v.style.display = 'block';
+        v.play();
+      } else {
+        const img = document.getElementById("mediaPreviewImg");
+        img.src = filePath;
+        img.style.display = 'block';
+      }
+      showModal("mediaPreviewModal");
+    }
+    // Close media preview and stop video
+    const origPreviewClose = closeModal;
+    closeModal = function(id) {
+      if (id === 'mediaPreviewModal') {
+        const v = document.getElementById("mediaPreviewVideo");
+        v.pause(); v.src = '';
+      }
+      origPreviewClose(id);
+    };
+
     // ---- Shared helpers ----
     function renderSystemMessage(content) {
       return '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:4px 0;">' + escapeHtml(content || "") + '</div>';
     }
 
+    function renderMessageContent(m) {
+      if (m.msg_type === "image") return '<img src="' + m.file_path + '" style="max-width:200px;max-height:180px;border-radius:12px;cursor:pointer;" onclick="previewMedia(\'' + m.file_path + '\',\'image\')">';
+      if (m.msg_type === "video") {
+        const path = m.file_path;
+        const name = escapeHtml(m.file_name || '视频');
+        return '<div class="video-thumb-wrap" data-video-path="' + path + '" onclick="previewMedia(\'' + path + '\',\'video\')" style="position:relative;width:200px;height:150px;background:#1a1a2e;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;">'
+          + '<div class="video-thumb-bg" style="position:absolute;inset:0;background-size:cover;background-position:center;"></div>'
+          + '<div style="position:relative;width:48px;height:48px;background:rgba(0,0,0,0.6);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.8);"><span style="color:white;font-size:20px;margin-left:3px;">&#9654;</span></div>'
+          + '<div style="position:absolute;bottom:0;left:0;right:0;padding:4px 8px;background:linear-gradient(transparent,rgba(0,0,0,0.7));font-size:11px;color:rgba(255,255,255,0.9);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + name + '</div>'
+          + '</div>';
+      }
+      if (m.msg_type === "file") return '<a href="' + m.file_path + '" download="' + m.file_name + '">📎 ' + m.file_name + '</a>';
+      const c = m.content || '';
+      if (c.indexOf('📩 合并转发') === 0) {
+        const lines = c.split('\n').filter(Boolean);
+        const attrSafe = c.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+        return '<div style="background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:10px 14px;cursor:pointer;" onclick="showMergeForwardDetail(\'' + attrSafe + '\')">'
+          + '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">📩 合并转发</div>'
+          + '<div style="font-size:12px;color:var(--text-muted);">' + (lines.length - 1)  + ' 条消息</div></div>';
+      }
+      return escapeHtml(c);
+    }
+
     let blacklistCache = [];
+
+    function captureVideoThumbnails() {
+      document.querySelectorAll('.video-thumb-wrap:not([data-thumb-done])').forEach(wrap => {
+        wrap.setAttribute('data-thumb-done', '1');
+        const path = wrap.dataset.videoPath;
+        if (!path) return;
+        const bg = wrap.querySelector('.video-thumb-bg');
+        if (!bg) return;
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        video.src = path;
+        video.onloadeddata = function() {
+          const t = Math.min(0.5, Math.max(0, (video.duration || 1) / 2));
+          video.currentTime = t;
+        };
+        video.onseeked = function() {
+          try {
+            const c = document.createElement('canvas');
+            const vw = video.videoWidth || 200;
+            const vh = video.videoHeight || 150;
+            const scale = Math.min(200 / vw, 150 / vh, 1);
+            c.width = Math.round(vw * scale);
+            c.height = Math.round(vh * scale);
+            c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+            bg.style.backgroundImage = 'url(' + c.toDataURL('image/jpeg', 0.7) + ')';
+          } catch (e) {}
+          video.remove();
+        };
+        video.onerror = function() { video.remove(); };
+      });
+    }
 
     async function loadBlacklist() {
       try {
@@ -1368,6 +1776,7 @@
     async function memberInfoToggleBlock() {
       if (!memberInfoTarget) return;
       const isBlocked = blacklistCache.some(b => b.uid === memberInfoTarget.uid);
+      if (!isBlocked && !confirm('确定要拉黑 ' + memberInfoTarget.name + ' 吗？\n拉黑后对方无法向你发送消息。')) return;
       try {
         if (isBlocked) {
           await api("/api/blacklist/remove", { method: "POST", body: JSON.stringify({ uid: memberInfoTarget.uid }) });
@@ -1407,6 +1816,7 @@
 
     async function memberInfoRemoveFriend() {
       if (!memberInfoTarget) return;
+      if (!confirm('确定要解除与 ' + memberInfoTarget.name + ' 的好友关系吗？')) return;
       try {
         await api("/api/friends/remove", { method: "POST", body: JSON.stringify({ uid: memberInfoTarget.uid }) });
         updateFriendBtn();
@@ -1452,11 +1862,517 @@
       } catch (e) { alert(e.message); }
     }
 
-    // ---------- Init ----------
+    // ---------- Forward Messages ----------
+    let forwardMsgs = [];
+    let allForwardUsers = [];
+    let multiSelectMsgIds = new Set();
+
+    async function showForwardModal(msgs) {
+      forwardMsgs = msgs;
+      document.getElementById("forwardModalDesc").textContent = '转发 ' + msgs.length + ' 条消息，选择目标';
+      const [fetchedGroups, fetchedUsers] = await Promise.all([
+        api("/api/groups").catch(() => null),
+        api("/api/users").catch(() => null)
+      ]);
+      const chatList = document.getElementById("forwardChatList");
+      if (fetchedGroups && fetchedGroups.length) {
+        chatList.innerHTML = fetchedGroups.map(g =>
+          '<label style="display:flex;align-items:center;padding:6px 6px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);">'
+          + '<input type="checkbox" class="fwd-chat-cb" value="' + g.group_id + '" data-name="' + escapeHtml(g.name) + '" style="margin-right:6px;" />'
+          + '#' + escapeHtml(g.name) + '</label>'
+        ).join("");
+      } else {
+        chatList.innerHTML = '<p style="padding:8px;color:var(--text-muted);font-size:13px;">' + (fetchedGroups ? '暂无聊天室' : '加载失败') + '</p>';
+      }
+      const userList = document.getElementById("forwardUserList");
+      if (fetchedUsers) {
+        allForwardUsers = fetchedUsers.filter(u => u.uid !== currentUid);
+        renderForwardUsers(allForwardUsers);
+      } else {
+        userList.innerHTML = '<p style="padding:8px;color:var(--text-muted);font-size:13px;">加载失败</p>';
+      }
+      document.getElementById("forwardUserSearch").value = '';
+      showModal("forwardModal");
+    }
+
+    function renderForwardUsers(users) {
+      const userList = document.getElementById("forwardUserList");
+      if (users.length === 0) {
+        userList.innerHTML = '<p style="padding:8px;color:var(--text-muted);font-size:13px;">无匹配用户</p>';
+        return;
+      }
+      userList.innerHTML = users.map(u =>
+        '<label style="display:flex;align-items:center;padding:6px 6px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);">'
+        + '<input type="checkbox" class="fwd-user-cb" value="' + u.uid + '" data-name="' + escapeHtml(u.name) + '" style="margin-right:6px;" />'
+        + escapeHtml(u.name) + '</label>'
+      ).join("");
+    }
+
+    function filterForwardUsers(q) {
+      const trimmed = q.trim().toLowerCase();
+      if (!trimmed) { renderForwardUsers(allForwardUsers); return; }
+      const filtered = allForwardUsers.filter(u =>
+        u.uid.toString().toLowerCase().includes(trimmed) ||
+        (u.name || '').toLowerCase().includes(trimmed)
+      );
+      renderForwardUsers(filtered);
+    }
+
+    function closeForwardModal() {
+      closeModal("forwardModal");
+      forwardMsgs = [];
+    }
+    function toggleFwdChats(checked) {
+      document.querySelectorAll(".fwd-chat-cb").forEach(cb => cb.checked = checked);
+    }
+    function toggleFwdUsers(checked) {
+      document.querySelectorAll(".fwd-user-cb").forEach(cb => cb.checked = checked);
+    }
+
+    async function doForward(mode) {
+      const chatIds = Array.from(document.querySelectorAll(".fwd-chat-cb:checked")).map(cb => cb.value);
+      const userUids = Array.from(document.querySelectorAll(".fwd-user-cb:checked")).map(cb => cb.value);
+      if (chatIds.length === 0 && userUids.length === 0) { alert("请选择转发目标"); return; }
+      const msgs = forwardMsgs;
+      if (msgs.length === 0) return;
+      closeForwardModal();
+      let success = 0, fail = 0;
+      const sendToGroup = async (cid, content, type) => {
+        if (typeof content === 'object') {
+          try { await api('/api/groups/' + cid + '/send', { method: 'POST', body: JSON.stringify(content) }); success++; } catch (e) { fail++; }
+        } else {
+          try { await api('/api/groups/' + cid + '/send', { method: 'POST', body: JSON.stringify({ content, msg_type: type || 'text' }) }); success++; } catch (e) { fail++; }
+        }
+      };
+      const sendToUser = async (uid, content, type) => {
+        if (typeof content === 'object') {
+          try { await api('/api/send', { method: 'POST', body: JSON.stringify({ receiver: uid, ...content }) }); success++; } catch (e) { fail++; }
+        } else {
+          try { await api('/api/send', { method: 'POST', body: JSON.stringify({ receiver: uid, content, msg_type: type || 'text' }) }); success++; } catch (e) { fail++; }
+        }
+      };
+      if (mode === 'merge') {
+        const lines = msgs.map(m => {
+          let text = m.content || '';
+          if (m.msg_type === 'image') text = '[图片]';
+          else if (m.msg_type === 'file') text = '[文件]' + (m.file_name ? ': ' + m.file_name : '');
+          else if (m.msg_type === 'video') text = '[视频]';
+          const name = m.sender_name || m.sender || '未知';
+          return name + ': ' + text;
+        });
+        const mergeContent = '📩 合并转发\n' + lines.join('\n');
+        for (const cid of chatIds) await sendToGroup(cid, mergeContent);
+        for (const uid of userUids) await sendToUser(uid, mergeContent);
+      } else {
+        for (const m of msgs) {
+          const content = m.content || '';
+          const msgType = m.msg_type || 'text';
+          if (msgType === 'text') {
+            for (const cid of chatIds) await sendToGroup(cid, content);
+            for (const uid of userUids) await sendToUser(uid, content);
+          } else {
+            const payload = { content: m.content || '', msg_type: msgType, file_path: m.file_path, file_name: m.file_name, file_size: m.file_size || 0 };
+            for (const cid of chatIds) await sendToGroup(cid, payload, 'json');
+            for (const uid of userUids) await sendToUser(uid, payload, 'json');
+          }
+        }
+      }
+      if (currentChatRoom) loadGroupMessages();
+      else if (privateChatPeer) loadPrivateMessages();
+      if (fail === 0) alert('转发成功');
+      else if (success > 0) alert('部分转发成功（' + success + '成功，' + fail + '失败）');
+      else alert('转发失败');
+    }
+
+    // ---------- Merge Forward Detail ----------
+    function showMergeForwardDetail(content) {
+      const lines = content.replace('📩 合并转发\n', '').split('\n').filter(Boolean);
+      const container = document.getElementById("mergeForwardContent");
+      container.innerHTML = lines.map(line => {
+        const colonIdx = line.indexOf(': ');
+        if (colonIdx === -1) return '<div style="padding:8px 0;font-size:13px;color:var(--text);">' + escapeHtml(line) + '</div>';
+        const name = escapeHtml(line.substring(0, colonIdx));
+        const text = escapeHtml(line.substring(colonIdx + 2));
+        return '<div style="display:flex;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);">'
+          + '<div class="avatar" style="width:32px;height:32px;font-size:13px;margin-right:10px;flex-shrink:0;">' + name.charAt(0) + '</div>'
+          + '<div><div style="font-size:12px;color:var(--text-muted);">' + name + '</div><div style="font-size:14px;color:var(--text);margin-top:2px;">' + text + '</div></div></div>';
+      }).join('');
+      showModal("mergeForwardModal");
+    }
+
+    // ---------- Multi-Select Mode (for messages) ----------
+    function enterMultiSelectMode() {
+      multiSelectMsgIds = new Set();
+      const inputBar = document.getElementById("inputBar");
+      inputBar.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;width:100%;">'
+        + '<span style="font-size:13px;color:var(--text-muted);flex:1;">已选择 <span id="multiCount">0</span> 条</span>'
+        + '<button class="btn-cancel" onclick="exitMultiSelectMode()" style="padding:6px 12px;">取消</button>'
+        + '<button class="btn-primary" onclick="doForwardFromMulti()" style="padding:6px 20px;font-size:15px;">转发</button></div>';
+      addMultiSelectCbs();
+    }
+
+    function exitMultiSelectMode() {
+      multiSelectMsgIds = new Set();
+      const inputBar = document.getElementById("inputBar");
+      inputBar.innerHTML = ''
+        + '<button class="plus-btn" id="plusBtn" onclick="togglePlusMenu()">+</button>'
+        + '<div class="plus-menu" id="plusMenu">'
+        + '  <div onclick="selectFile(\'image\')">📷 图片</div>'
+        + '  <div onclick="selectFile(\'file\')">📎 文件</div>'
+        + '  <div onclick="selectFile(\'video\')">🎬 视频</div>'
+        + '</div>'
+        + '<input id="textInput" placeholder="输入消息..." onkeypress="if(event.key===\'Enter\') sendCurrentMessage();" />'
+        + '<button class="send-btn" onclick="sendCurrentMessage()">➤</button>'
+        + '<input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)" />';
+      document.querySelectorAll('.msg-multi-cb').forEach(cb => cb.remove());
+      const inp = document.getElementById("textInput");
+      if (inp) { inp.disabled = false; inp.focus(); }
+    }
+
+    function addMultiSelectCbs() {
+      const container = document.getElementById("msgContainer");
+      container.querySelectorAll('.bubble').forEach(bubble => {
+        const wrapper = bubble.parentNode;
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.className = 'msg-multi-cb';
+        cb.style.cssText = 'width:16px;height:16px;margin:0 4px;flex-shrink:0;cursor:pointer;align-self:center;';
+        const msgId = bubble.dataset.msgId;
+        cb.onchange = function() {
+          if (this.checked && msgId) multiSelectMsgIds.add(msgId);
+          else if (msgId) multiSelectMsgIds.delete(msgId);
+          const el = document.getElementById("multiCount");
+          if (el) el.textContent = multiSelectMsgIds.size;
+        };
+        wrapper.insertBefore(cb, bubble);
+      });
+    }
+
+    async function doForwardFromMulti() {
+      if (multiSelectMsgIds.size === 0) { alert("请选择要转发的消息"); return; }
+      const ids = multiSelectMsgIds;
+      const msgs = [];
+      try {
+        if (currentChatRoom) {
+          const data = await api("/api/groups/" + currentChatRoom + "/messages");
+          data.forEach(m => { if (ids.has(m.id.toString())) msgs.push(m); });
+        } else if (privateChatPeer) {
+          const data = await api("/api/messages?with=" + privateChatPeer);
+          data.forEach(m => { if (ids.has(m.id.toString())) msgs.push(m); });
+        }
+      } catch(e) { alert('获取消息失败'); return; }
+      exitMultiSelectMode();
+      showForwardModal(msgs);
+    }
+
+    // ---------- 通话权限开关渲染 ----------
+function renderChatCallNotifyToggle(detail) {
+  const container = document.getElementById("chatDetailCallToggle");
+  const isSystem = detail.is_system;
+  const myNotify = detail.call_notify || 0;
+  if (isSystem) {
+    container.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">✅ 强制开启（系统聊天室）</span>';
+  } else {
+    const checked = myNotify === 1 ? 'checked' : '';
+    container.innerHTML = '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">'
+      + '<input type="checkbox" ' + checked + ' onchange="toggleChatCallNotify(this.checked ? 1 : 0)" /> 开启</label>';
+  }
+}
+
+async function toggleChatCallNotify(value) {
+  if (!currentChatRoom) return;
+  try {
+    const res = await api("/api/groups/" + currentChatRoom + "/call-setting", {
+      method: "POST", body: JSON.stringify({ call_notify: value })
+    });
+    chatDetailData.call_notify = res.call_notify;
+  } catch (e) { alert(e.message); renderChatCallNotifyToggle(chatDetailData); }
+}
+
+async function renderPrivateCallNotifyToggle() {
+  const container = document.getElementById("privateCallSetting");
+  const toggle = document.getElementById("privateCallToggle");
+  if (!memberInfoTarget || memberInfoTarget.uid === currentUid) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'flex';
+  try {
+    const res = await api("/api/call/preference?with=" + memberInfoTarget.uid);
+    const checked = res.call_notify === 1 ? 'checked' : '';
+    toggle.innerHTML = '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">'
+      + '<input type="checkbox" ' + checked + ' onchange="togglePrivateCallNotify(this.checked ? 1 : 0)" /> 开启</label>';
+  } catch (e) { toggle.innerHTML = ''; }
+}
+
+async function togglePrivateCallNotify(value) {
+  if (!memberInfoTarget) return;
+  try {
+    await api("/api/call/preference", {
+      method: "POST", body: JSON.stringify({ target_uid: memberInfoTarget.uid, call_notify: value })
+    });
+  } catch (e) { alert(e.message); }
+}
+
+// ---------- 语音/视频通话 ----------
+let callState = null; // { callId, type, peerUid, peerName, isCaller }
+let callEventSource = null;
+let callDurationTimer = null;
+let callStartTime = null;
+let callLocalStream = null;
+
+function connectCallSSE() {
+  if (callEventSource) callEventSource.close();
+  callEventSource = new EventSource('/api/call/events?uid=' + currentUid + '&token=' + token);
+  callEventSource.onmessage = function(e) {
+    if (!e.data) return;
+    try {
+      const events = JSON.parse(e.data);
+      events.forEach(function(evt) { handleCallEvent(evt); });
+    } catch (err) { /* ignore */ }
+  };
+  callEventSource.onerror = function() { /* browser auto-reconnects */ };
+}
+
+function handleCallEvent(evt) {
+  if (evt.type === 'call_invite') {
+    if (callState) return;
+    callState = { callId: evt.call_id, type: evt.call_type, peerUid: evt.from_uid, peerName: evt.from_name, isCaller: false };
+    document.getElementById('incomingCallName').textContent = evt.from_name;
+    document.getElementById('incomingCallType').textContent = evt.call_type === 'video' ? '📹 视频通话' : '🎤 语音通话';
+    showModal('incomingCallModal');
+  } else if (evt.type === 'call_accepted') {
+    if (!callState) return;
+    closeModal('incomingCallModal');
+    showCallWindow(callState.peerName, callState.type, false);
+    updateCallStatus('已连接');
+    startCallTimer();
+    if (callState.type === 'video') startLocalVideo();
+  } else if (evt.type === 'call_rejected') {
+    if (!callState) return;
+    closeModal('incomingCallModal');
+    alert('对方拒绝了通话邀请');
+    cleanupCall();
+  } else if (evt.type === 'call_hangup') {
+    if (!callState) return;
+    alert('对方已挂断');
+    cleanupCall();
+  }
+}
+
+function showCallWindow(name, type, isCaller) {
+  document.getElementById('callRemoteAvatarChar').textContent = name.charAt(0) || '?';
+  document.getElementById('callRemoteName').textContent = name;
+  document.getElementById('callStatusText').textContent = isCaller ? '正在呼叫...' : '连接中...';
+  document.getElementById('callDuration').textContent = '00:00';
+  document.getElementById('callRemoteVideo').style.display = 'none';
+  document.getElementById('callRemoteAvatar').style.display = 'flex';
+  document.getElementById('callLocalVideo').style.display = 'none';
+  showModal('callWindowModal');
+}
+
+function updateCallStatus(text) {
+  document.getElementById('callStatusText').textContent = text;
+}
+
+async function startCall(uid, name, type) {
+  try {
+    const res = await api('/api/call/check-online', {
+      method: 'POST', body: JSON.stringify({ uid: uid })
+    });
+    if (!res.online) { alert('对方未在线'); return; }
+    connectCallSSE();
+    const data = await api('/api/call/invite', {
+      method: 'POST', body: JSON.stringify({ target_uid: uid, call_type: type })
+    });
+    callState = { callId: data.call_id, type: type, peerUid: uid, peerName: name, isCaller: true };
+    showCallWindow(name, type, true);
+  } catch (e) { alert(e.message); }
+}
+
+function groupCall(chatId, type) {
+  showGroupCallMemberPicker(chatId, type);
+}
+
+function startCallFromPlus(type) {
+  if (privateChatPeer) {
+    startCall(privateChatPeer, privateChatPeerName, type);
+  } else if (currentChatRoom) {
+    groupCall(currentChatRoom, type);
+  }
+}
+
+async function showGroupCallMemberPicker(chatId, type) {
+  try {
+    const detail = await api('/api/groups/' + chatId + '/detail');
+    const members = detail.members.filter(function(m) { return m.uid !== currentUid; });
+    if (members.length === 0) { alert('聊天室中没有其他成员'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.id = 'groupCallPickerOverlay';
+    overlay.onclick = function() { overlay.remove(); };
+    const content = document.createElement('div');
+    content.className = 'modal';
+    content.style.width = '360px';
+    content.onclick = function(e) { e.stopPropagation(); };
+    const canCallCount = members.filter(function(m) { return m.call_notify === 1; }).length;
+    content.innerHTML = '<h3>' + (type === 'video' ? '📹' : '🎤') + ' 选择通话成员</h3>'
+      + '<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">选择要邀请的成员（有权限: ' + canCallCount + '/' + members.length + '）</p>'
+      + '<div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;">'
+      + members.map(function(m) {
+          const hasPerm = m.call_notify === 1;
+          const style = hasPerm
+            ? 'display:flex;align-items:center;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;'
+            : 'display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border);font-size:14px;color:var(--text-muted);background:#f8fafc;';
+          const disabled = hasPerm ? '' : 'disabled';
+          const tag = hasPerm ? '' : '<span style="font-size:11px;margin-left:6px;color:var(--text-muted);">(未开启)</span>';
+          return '<label style="' + style + '">'
+            + '<input type="checkbox" class="gcall-member-cb" value="' + m.uid + '" data-name="' + escapeHtml(m.name) + '" style="margin-right:10px;" ' + disabled + ' />'
+            + escapeHtml(m.name) + tag + '</label>';
+        }).join('')
+      + '</div>'
+      + '<div class="btn-row"><button class="btn-cancel" onclick="document.getElementById(\'groupCallPickerOverlay\').remove()">取消</button>'
+      + '<button class="btn-primary" onclick="startGroupCall(\'' + chatId + '\',\'' + type + '\')">邀请</button></div>';
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+  } catch (e) { alert(e.message); }
+}
+
+async function startGroupCall(chatId, type) {
+  const cbs = document.querySelectorAll('.gcall-member-cb:checked');
+  if (cbs.length === 0) { alert('请选择至少一个成员'); return; }
+  document.getElementById('groupCallPickerOverlay').remove();
+  let anyOnline = false;
+  for (const m of Array.from(cbs).map(function(cb) { return { uid: cb.value, name: cb.dataset.name }; })) {
+    try {
+      const r = await api('/api/call/check-online', { method: 'POST', body: JSON.stringify({ uid: m.uid }) });
+      if (r.online) anyOnline = true;
+    } catch(e) {}
+  }
+  if (!anyOnline) { alert('所有成员均未在线'); return; }
+  connectCallSSE();
+  for (const m of Array.from(cbs).map(function(cb) { return { uid: cb.value, name: cb.dataset.name }; })) {
+    try {
+      const r = await api('/api/call/check-online', { method: 'POST', body: JSON.stringify({ uid: m.uid }) });
+      if (r.online) {
+        await api('/api/call/invite', { method: 'POST', body: JSON.stringify({ target_uid: m.uid, call_type: type }) });
+      }
+    } catch(e) {}
+  }
+  callState = { callId: 'group', type: type, peerUid: '', peerName: '群通话', isCaller: true };
+  showCallWindow('群通话', type, true);
+  updateCallStatus('正在邀请成员...');
+}
+
+async function acceptCall() {
+  if (!callState || callState.isCaller) return;
+  closeModal('incomingCallModal');
+  try {
+    await api('/api/call/respond', {
+      method: 'POST', body: JSON.stringify({ call_id: callState.callId, action: 'accept' })
+    });
+    showCallWindow(callState.peerName, callState.type, false);
+    updateCallStatus('已连接');
+    startCallTimer();
+    if (callState.type === 'video') startLocalVideo();
+  } catch (e) { alert(e.message); cleanupCall(); }
+}
+
+async function rejectCall() {
+  if (!callState || callState.isCaller) return;
+  closeModal('incomingCallModal');
+  try {
+    await api('/api/call/respond', {
+      method: 'POST', body: JSON.stringify({ call_id: callState.callId, action: 'reject' })
+    });
+  } catch (e) {}
+  cleanupCall();
+}
+
+async function endCall() {
+  if (!callState) return;
+  try {
+    await api('/api/call/respond', {
+      method: 'POST', body: JSON.stringify({ call_id: callState.callId, action: 'hangup' })
+    });
+  } catch (e) {}
+  cleanupCall();
+}
+
+function cleanupCall() {
+  stopCallTimer();
+  stopLocalVideo();
+  closeModal('incomingCallModal');
+  closeModal('callWindowModal');
+  if (callEventSource) { callEventSource.close(); callEventSource = null; }
+  callState = null;
+  callStartTime = null;
+}
+
+function startLocalVideo() {
+  if (callLocalStream) return;
+  const video = document.getElementById('callLocalVideo');
+  video.style.display = 'block';
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(function(stream) {
+      callLocalStream = stream;
+      video.srcObject = stream;
+      video.play();
+    })
+    .catch(function() { video.style.display = 'none'; });
+}
+
+function stopLocalVideo() {
+  if (callLocalStream) {
+    callLocalStream.getTracks().forEach(function(t) { t.stop(); });
+    callLocalStream = null;
+  }
+  const v = document.getElementById('callLocalVideo');
+  v.srcObject = null;
+  v.style.display = 'none';
+}
+
+function toggleCallMute() {
+  if (!callLocalStream) return;
+  const t = callLocalStream.getAudioTracks()[0];
+  if (!t) return;
+  t.enabled = !t.enabled;
+  const btn = document.getElementById('callMuteBtn');
+  btn.textContent = t.enabled ? '🎤' : '🔇';
+  btn.style.opacity = t.enabled ? '1' : '0.5';
+}
+
+function toggleCallVideo() {
+  if (!callLocalStream) return;
+  const t = callLocalStream.getVideoTracks()[0];
+  if (!t) return;
+  t.enabled = !t.enabled;
+  const btn = document.getElementById('callVideoBtn');
+  btn.textContent = t.enabled ? '📹' : '🚫';
+  btn.style.opacity = t.enabled ? '1' : '0.5';
+}
+
+function startCallTimer() {
+  callStartTime = Date.now();
+  if (callDurationTimer) clearInterval(callDurationTimer);
+  callDurationTimer = setInterval(function() {
+    if (!callStartTime) return;
+    const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+    const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const sec = String(elapsed % 60).padStart(2, '0');
+    document.getElementById('callDuration').textContent = min + ':' + sec;
+  }, 1000);
+}
+
+function stopCallTimer() {
+  if (callDurationTimer) { clearInterval(callDurationTimer); callDurationTimer = null; }
+}
+
+// ---------- Init ----------
     window.onload = function() {
       if (!localStorage.getItem("token")) { location.href = "/"; return; }
       loadGroups();
       loadBlacklist();
+      connectCallSSE();
     };
   </script>
 </body>

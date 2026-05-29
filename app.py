@@ -1,9 +1,10 @@
 import sqlite3, hashlib, secrets, re, time, os
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, g, send_from_directory
+from flask import Flask, request, jsonify, g, send_from_directory, Response
 from functools import wraps
 from werkzeug.utils import secure_filename
 import json
+import uuid
 import os
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['SECRET_KEY'] = secrets.token_hex(32)
@@ -43,6 +44,35 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, publisher TEXT, unit TEXT,
                   title TEXT, content TEXT, attachments TEXT, created_at REAL,
                   modified_at REAL, modifier TEXT)''')
+    # Migration: add notification columns if not present
+    try:
+        c.execute('ALTER TABLE announcements ADD COLUMN is_read INTEGER DEFAULT 0')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE announcements ADD COLUMN target_uid TEXT')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE announcements ADD COLUMN is_locked INTEGER DEFAULT 0')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE friend_requests ADD COLUMN is_read INTEGER DEFAULT 0')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE chat_invites ADD COLUMN is_read INTEGER DEFAULT 0')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE group_members ADD COLUMN call_notify INTEGER DEFAULT 0')
+    except:
+        pass
+    c.execute('''CREATE TABLE IF NOT EXISTS call_preferences
+                 (uid TEXT NOT NULL, target_uid TEXT NOT NULL,
+                  call_notify INTEGER DEFAULT 0,
+                  PRIMARY KEY (uid, target_uid))''')
     c.execute('''CREATE TABLE IF NOT EXISTS classrooms
                  (id TEXT PRIMARY KEY, building TEXT, floor INTEGER, seats INTEGER,
                   has_media INTEGER)''')
@@ -693,31 +723,35 @@ def send_message():
         file = request.files.get('file')
         file_path = file_name = None
         file_size = 0
+    else:
+        data = request.get_json()
+        receiver = data.get('receiver','').strip()
+        msg_type = data.get('msg_type','text')
+        content = data.get('content','').strip()
+        file_path = data.get('file_path')
+        file_name = data.get('file_name')
+        file_size = data.get('file_size', 0)
+        if not receiver:
+            return jsonify({'error':'接收者不能为空'}),400
+
+    # Check if sender is blocked by receiver
+    conn = get_db()
+    if conn.execute('SELECT 1 FROM blacklist WHERE uid=? AND blocked_uid=?', (receiver, sender)).fetchone():
+        conn.close()
+        return jsonify({'error':'你已被此用户拉黑，无法发送消息'}),403
+
+    if request.content_type and 'multipart/form-data' in request.content_type:
         if file and msg_type in ('image','video','audio','file'):
             filename = secure_filename(f"{int(time.time())}_{file.filename}")
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
             file_path = f'/uploads/{filename}'
             file_name = file.filename
             file_size = os.path.getsize(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        ts = time.time()
-        conn = get_db()
-        conn.execute('INSERT INTO messages (sender,receiver,content,msg_type,file_path,file_name,file_size,status,timestamp) VALUES (?,?,?,?,?,?,?,?,?)',
-                     (sender, receiver, content, msg_type, file_path, file_name, file_size, 'sent', ts))
-        conn.commit(); conn.close()
-        return jsonify({'message':'发送成功','timestamp':ts}),201
-    else:
-        data = request.get_json()
-        receiver = data.get('receiver','').strip()
-        msg_type = data.get('msg_type','text')
-        content = data.get('content','').strip()
-        if not receiver:
-            return jsonify({'error':'接收者不能为空'}),400
-        ts = time.time()
-        conn = get_db()
-        conn.execute('INSERT INTO messages (sender,receiver,content,msg_type,status,timestamp) VALUES (?,?,?,?,?,?)',
-                     (sender, receiver, content, msg_type, 'sent', ts))
-        conn.commit(); conn.close()
-        return jsonify({'message':'发送成功','timestamp':ts}),201
+    ts = time.time()
+    conn.execute('INSERT INTO messages (sender,receiver,content,msg_type,file_path,file_name,file_size,status,timestamp) VALUES (?,?,?,?,?,?,?,?,?)',
+                 (sender, receiver, content, msg_type, file_path, file_name, file_size, 'sent', ts))
+    conn.commit(); conn.close()
+    return jsonify({'message':'发送成功','timestamp':ts}),201
 
 @app.route('/api/messages/revoke/<int:msg_id>', methods=['POST'])
 @token_required
@@ -729,9 +763,60 @@ def revoke_message(msg_id):
         return jsonify({'error':'无权撤回'}),403
     if time.time() - msg['timestamp'] > 120:
         return jsonify({'error':'超过2分钟无法撤回'}),400
-    conn.execute('UPDATE messages SET revoked=1 WHERE id=?', (msg_id,))
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    name = user['name'] if user else uid
+    conn.execute('UPDATE messages SET revoked=1, content=? WHERE id=?', (f'{name}撤回了一条消息', msg_id))
     conn.commit(); conn.close()
     return jsonify({'message':'已撤回'})
+
+
+@app.route('/api/stream')
+def stream():
+    uid = request.args.get('uid', '')
+    token = request.args.get('token', '')
+    if not uid or not token or tokens.get(token) != uid:
+        return jsonify({'error':'认证失败'}), 401
+    mode = request.args.get('mode', '')
+    target = request.args.get('target', '')
+    after = float(request.args.get('after', '0'))
+    def generate():
+        while True:
+            conn = get_db()
+            new_msgs = []
+            try:
+                if mode == 'private' and target:
+                    rows = conn.execute(
+                        'SELECT * FROM messages WHERE ((sender=? AND receiver=?) OR (sender=? AND receiver=?)) AND timestamp > ? ORDER BY timestamp ASC',
+                        (uid, target, target, uid, after)).fetchall()
+                    for m in rows:
+                        new_msgs.append({'id':m['id'],'sender':m['sender'],'receiver':m['receiver'],
+                                         'content':m['content'],'msg_type':m['msg_type'],
+                                         'file_path':m['file_path'],'file_name':m['file_name'],
+                                         'file_size':m['file_size'],'status':m['status'],
+                                         'timestamp':m['timestamp'],'revoked':m['revoked']})
+                        if m['timestamp'] > after:
+                            after = m['timestamp']
+                elif mode == 'group' and target:
+                    rows = conn.execute(
+                        '''SELECT gm.*, COALESCE(u.name, '系统') as sender_name
+                           FROM group_messages gm LEFT JOIN users u ON gm.sender = u.uid
+                           WHERE gm.group_id=? AND gm.timestamp > ? ORDER BY gm.timestamp''',
+                        (target, after)).fetchall()
+                    for m in rows:
+                        new_msgs.append({'id':m['id'],'sender':m['sender'],'sender_name':m['sender_name'],
+                                         'content':m['content'],'msg_type':m['msg_type'],
+                                         'file_path':m['file_path'],'file_name':m['file_name'],
+                                         'status':m['status'],'timestamp':m['timestamp'],'revoked':m['revoked']})
+                        if m['timestamp'] > after:
+                            after = m['timestamp']
+            finally:
+                conn.close()
+            if new_msgs:
+                yield f"data: {json.dumps(new_msgs, ensure_ascii=False)}\n\n"
+            else:
+                yield ":\n\n"  # keep-alive
+            time.sleep(1)
+    return Response(generate(), mimetype='text/event-stream')
 
 
 # ---------- 用户群组（群组容器） ----------
@@ -1204,9 +1289,17 @@ def remove_friend():
     friend_uid = data.get('uid', '').strip()
     if not friend_uid:
         return jsonify({'error': '用户ID不能为空'}), 400
-    
+
     conn = get_db()
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    user_name = user['name'] if user else uid
     conn.execute('DELETE FROM friends WHERE uid=? AND friend_uid=?', (uid, friend_uid))
+    # Also remove the reverse direction
+    conn.execute('DELETE FROM friends WHERE uid=? AND friend_uid=?', (friend_uid, uid))
+    # Send notification to the removed friend
+    content = f'{user_name}已取消和你的好友关系'
+    conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
+                 (user_name, 'notification', '', content, friend_uid, time.time()))
     conn.commit()
     conn.close()
     return jsonify({'message': '已删除好友'})
@@ -1277,21 +1370,134 @@ def reject_friend_request(req_id):
 def get_notifications():
     uid = g.current_user['uid']
     conn = get_db()
-    friend_reqs = conn.execute("SELECT fr.id, fr.from_uid, fr.message, fr.created_at, u.name as from_name, 'friend_request' as type FROM friend_requests fr JOIN users u ON fr.from_uid = u.uid WHERE fr.to_uid=? AND fr.status='pending'", (uid,)).fetchall()
-    chat_invites = conn.execute("SELECT ci.id, ci.chat_id, ci.chat_name, ci.from_uid, ci.created_at, u.name as from_name, 'chat_invite' as type FROM chat_invites ci JOIN users u ON ci.from_uid = u.uid WHERE ci.to_uid=? AND ci.status='pending'", (uid,)).fetchall()
+    friend_reqs = conn.execute("SELECT fr.id, fr.from_uid, fr.message, fr.created_at, fr.is_read, u.name as from_name, 'friend_request' as type FROM friend_requests fr JOIN users u ON fr.from_uid = u.uid WHERE fr.to_uid=? AND fr.status='pending'", (uid,)).fetchall()
+    chat_invites = conn.execute("SELECT ci.id, ci.chat_id, ci.chat_name, ci.from_uid, ci.created_at, ci.is_read, u.name as from_name, 'chat_invite' as type FROM chat_invites ci JOIN users u ON ci.from_uid = u.uid WHERE ci.to_uid=? AND ci.status='pending'", (uid,)).fetchall()
+    sys_notifs = conn.execute("SELECT id, publisher, content, created_at, is_read, is_locked FROM announcements WHERE target_uid=? ORDER BY created_at DESC", (uid,)).fetchall()
     conn.close()
     notifs = []
     for r in friend_reqs:
-        notifs.append({'id': r['id'], 'type': 'friend_request', 'from_uid': r['from_uid'],
-                       'from_name': r['from_name'], 'message': r['message'], 'created_at': r['created_at']})
+        notifs.append({'id': 'fr_' + str(r['id']), 'type': 'friend_request', 'from_uid': r['from_uid'],
+                       'from_name': r['from_name'], 'message': r['message'], 'created_at': r['created_at'],
+                       'is_read': r['is_read'] == '1' or r['is_read'] == 1})
     for ci in chat_invites:
-        notifs.append({'id': ci['id'], 'type': 'chat_invite', 'chat_id': ci['chat_id'],
+        notifs.append({'id': 'ci_' + str(ci['id']), 'type': 'chat_invite', 'chat_id': ci['chat_id'],
                        'chat_name': ci['chat_name'], 'from_uid': ci['from_uid'],
-                       'from_name': ci['from_name'], 'created_at': ci['created_at']})
+                       'from_name': ci['from_name'], 'created_at': ci['created_at'],
+                       'is_read': ci['is_read'] == '1' or ci['is_read'] == 1})
+    for s in sys_notifs:
+        notifs.append({'id': 'sys_' + str(s['id']), 'type': 'system', 'content': s['content'],
+                       'publisher': s['publisher'], 'is_read': s['is_read'] == '1' or s['is_read'] == 1,
+                       'is_locked': s['is_locked'] == '1' or s['is_locked'] == 1,
+                       'created_at': s['created_at']})
     notifs.sort(key=lambda n: n['created_at'], reverse=True)
     return jsonify(notifs)
 
+@app.route('/api/notifications/system', methods=['POST'])
+@token_required
+def send_system_notification():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    target_uid = data.get('target_uid', '').strip()
+    content = data.get('content', '').strip()
+    if not target_uid or not content:
+        return jsonify({'error': '参数不完整'}), 400
+    conn = get_db()
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    publisher = user['name'] if user else uid
+    conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
+                 (publisher, 'notification', '', content, target_uid, time.time()))
+    conn.commit(); conn.close()
+    return jsonify({'message': '通知已发送'}), 201
 
+@app.route('/api/notifications/read', methods=['POST'])
+@token_required
+def mark_notification_read():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    notif_id = data.get('id', '')
+    conn = get_db()
+    if notif_id.startswith('sys_'):
+        ann_id = notif_id.replace('sys_', '')
+        conn.execute("UPDATE announcements SET is_read=1 WHERE id=? AND target_uid=?", (ann_id, uid))
+    elif notif_id.startswith('fr_'):
+        req_id = notif_id.replace('fr_', '')
+        conn.execute("UPDATE friend_requests SET is_read=1 WHERE id=? AND to_uid=?", (req_id, uid))
+    elif notif_id.startswith('ci_'):
+        inv_id = notif_id.replace('ci_', '')
+        conn.execute("UPDATE chat_invites SET is_read=1 WHERE id=? AND to_uid=?", (inv_id, uid))
+    conn.commit(); conn.close()
+    return jsonify({'message': '已标记已读'})
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@token_required
+def mark_all_notifications_read():
+    uid = g.current_user['uid']
+    conn = get_db()
+    conn.execute("UPDATE announcements SET is_read=1 WHERE target_uid=? AND (is_read IS NULL OR is_read=0)", (uid,))
+    conn.commit(); conn.close()
+    return jsonify({'message': '全部已读'})
+
+@app.route('/api/notifications/unread-count', methods=['GET'])
+@token_required
+def unread_notification_count():
+    uid = g.current_user['uid']
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) as cnt FROM announcements WHERE target_uid=? AND (is_read IS NULL OR is_read=0 OR is_read='0')", (uid,)).fetchone()
+    conn.close()
+    return jsonify({'count': count['cnt'] if count else 0})
+
+@app.route('/api/notifications/delete', methods=['POST'])
+@token_required
+def delete_notification():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    notif_id = data.get('id', '')
+    conn = get_db()
+    if notif_id.startswith('sys_'):
+        ann_id = notif_id.replace('sys_', '')
+        ann = conn.execute('SELECT * FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid)).fetchone()
+        if not ann:
+            conn.close()
+            return jsonify({'error': '通知不存在'}), 404
+        if ann.get('is_locked') in ('1', 1, 'true'):
+            conn.close()
+            return jsonify({'error': '通知已被锁定，无法删除'}), 403
+        conn.execute('DELETE FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid))
+    elif notif_id.startswith('fr_'):
+        req_id = notif_id.replace('fr_', '')
+        conn.execute('DELETE FROM friend_requests WHERE id=? AND to_uid=?', (req_id, uid))
+    elif notif_id.startswith('ci_'):
+        inv_id = notif_id.replace('ci_', '')
+        conn.execute('DELETE FROM chat_invites WHERE id=? AND to_uid=?', (inv_id, uid))
+    conn.commit(); conn.close()
+    return jsonify({'message': '已删除'})
+
+@app.route('/api/notifications/delete-read', methods=['POST'])
+@token_required
+def delete_read_notifications():
+    uid = g.current_user['uid']
+    conn = get_db()
+    conn.execute("DELETE FROM announcements WHERE target_uid=? AND (is_read=1 OR is_read='1') AND (is_locked IS NULL OR is_locked=0 OR is_locked='0')", (uid,))
+    conn.execute("DELETE FROM friend_requests WHERE to_uid=? AND (is_read=1 OR is_read='1')", (uid,))
+    conn.execute("DELETE FROM chat_invites WHERE to_uid=? AND (is_read=1 OR is_read='1')", (uid,))
+    conn.commit(); conn.close()
+    return jsonify({'message': '已删除'})
+
+@app.route('/api/notifications/lock', methods=['POST'])
+@token_required
+def lock_notification():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    notif_id = data.get('id', '')
+    locked = data.get('locked', True)
+    if not notif_id.startswith('sys_'):
+        return jsonify({'message': '无需操作'})
+    ann_id = notif_id.replace('sys_', '')
+    conn = get_db()
+    val = 1 if locked else 0
+    conn.execute("UPDATE announcements SET is_locked=? WHERE id=? AND target_uid=?", (val, ann_id, uid))
+    conn.commit(); conn.close()
+    return jsonify({'message': '操作成功'})
 
 # ---------- 聊天室邀请处理 ----------
 @app.route('/api/chat-invites/<int:invite_id>/approve', methods=['POST'])
@@ -1349,6 +1555,11 @@ def add_blacklist():
     conn = get_db()
     try:
         conn.execute('INSERT OR IGNORE INTO blacklist VALUES (?,?)', (uid, blocked_uid))
+        user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        user_name = user['name'] if user else uid
+        content = f'{user_name}已将你拉黑'
+        conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
+                     (user_name, 'notification', '', content, blocked_uid, time.time()))
         conn.commit()
         return jsonify({'message': '已拉黑'}), 201
     except Exception as e:
@@ -1542,11 +1753,39 @@ def send_group_message(group_id):
         data = request.get_json()
         content = data.get('content','')
         msg_type = data.get('msg_type','text')
+        file_path = data.get('file_path')
+        file_name = data.get('file_name')
+        file_size = data.get('file_size', 0)
         ts = time.time()
-        conn.execute('INSERT INTO group_messages (group_id,sender,content,msg_type,status,timestamp) VALUES (?,?,?,?,?,?)',
-                     (group_id, sender, content, msg_type, 'sent', ts))
+        conn.execute('INSERT INTO group_messages (group_id,sender,content,msg_type,file_path,file_name,file_size,status,timestamp) VALUES (?,?,?,?,?,?,?,?,?)',
+                     (group_id, sender, content, msg_type, file_path, file_name, file_size, 'sent', ts))
         conn.commit(); conn.close()
         return jsonify({'message':'发送成功'}),201
+
+@app.route('/api/groups/revoke/<int:msg_id>', methods=['POST'])
+@token_required
+def revoke_group_message(msg_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    try:
+        msg = conn.execute('SELECT * FROM group_messages WHERE id=?', (msg_id,)).fetchone()
+        if not msg:
+            return jsonify({'error':'消息不存在'}),404
+        member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (msg['group_id'], uid)).fetchone()
+        is_admin = member and member['role'] in ('admin','manager')
+        is_own = msg['sender'] == uid
+        can_revoke = is_own and (is_admin or time.time() - msg['timestamp'] <= 120)
+        can_revoke = can_revoke or (not is_own and is_admin)
+        if not can_revoke:
+            err = '超过2分钟无法撤回' if is_own else '无权撤回'
+            return jsonify({'error':err}), (400 if is_own else 403)
+        user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        name = user['name'] if user else uid
+        conn.execute('UPDATE group_messages SET revoked=1, content=? WHERE id=?', (f'{name}撤回了一条消息', msg_id))
+        conn.commit()
+        return jsonify({'message':'已撤回'})
+    finally:
+        conn.close()
 
 def _dissolve_chat_room(conn, group_id, reason):
     """解散聊天室：删除成员、插入解散原因、删除聊天室，保留消息"""
@@ -1590,16 +1829,23 @@ def chat_room_detail(group_id):
         return jsonify({'error':'无权访问'}),403
     chat = conn.execute('SELECT * FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
     if not chat: return jsonify({'error':'聊天室不存在'}),404
-    members = conn.execute('''SELECT gm.uid, gm.role, gm.joined_at, u.name
+    members = conn.execute('''SELECT gm.uid, gm.role, gm.joined_at, gm.call_notify, u.name
                               FROM group_members gm JOIN users u ON gm.uid = u.uid
                               WHERE gm.group_id=? ORDER BY gm.joined_at''', (group_id,)).fetchall()
+    my_call_notify = None
+    for m in members:
+        if m['uid'] == uid:
+            my_call_notify = m['call_notify'] or 0
+            break
     conn.close()
     return jsonify({
         'group_id': chat['group_id'],
         'name': chat['name'],
         'creator': chat['creator'],
         'group_type': chat['group_type'],
-        'members': [{'uid':m['uid'],'name':m['name'],'role':m['role']} for m in members]
+        'call_notify': my_call_notify or 0,
+        'is_system': chat['creator'] == 'system',
+        'members': [{'uid':m['uid'],'name':m['name'],'role':m['role'],'call_notify':m['call_notify'] or 0} for m in members]
     })
 
 @app.route('/api/groups/<group_id>/invite', methods=['POST'])
@@ -1865,6 +2111,165 @@ def course_schedule():
                      'classroom':c['classroom_id'],'day_of_week':c['day_of_week'],
                      'start_time':c['start_time'],'end_time':c['end_time']} for c in courses])
 
+# ---------- 语音/视频通话信令 ----------
+user_heartbeats = {}  # uid -> last heartbeat timestamp
+call_events = {}      # uid -> [event, ...]
+active_calls = {}     # call_id -> {caller, callee, caller_name, callee_name, call_type, status, created_at}
+
+@app.route('/api/groups/<group_id>/call-setting', methods=['POST'])
+@token_required
+def set_call_notify(group_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    call_notify = data.get('call_notify', 0)
+    conn = get_db()
+    chat = conn.execute('SELECT * FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    if not chat:
+        conn.close()
+        return jsonify({'error': '聊天室不存在'}), 404
+    # 系统聊天室强制开启，不可修改
+    if chat['creator'] == 'system' and call_notify != 1:
+        conn.close()
+        return jsonify({'error': '系统聊天室强制开启通话通知'}), 403
+    # 检查用户是否在聊天室中
+    if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone():
+        conn.close()
+        return jsonify({'error': '你不是该聊天室成员'}), 403
+    conn.execute('UPDATE group_members SET call_notify=? WHERE group_id=? AND uid=?', (call_notify, group_id, uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '设置成功', 'call_notify': call_notify})
+
+@app.route('/api/call/preference', methods=['GET', 'POST'])
+@token_required
+def call_preference():
+    uid = g.current_user['uid']
+    conn = get_db()
+    if request.method == 'GET':
+        target_uid = request.args.get('with', '').strip()
+        if not target_uid:
+            return jsonify({'error': '参数不完整'}), 400
+        row = conn.execute('SELECT call_notify FROM call_preferences WHERE uid=? AND target_uid=?', (uid, target_uid)).fetchone()
+        conn.close()
+        return jsonify({'call_notify': row['call_notify'] if row else 0})
+    else:
+        data = request.get_json()
+        target_uid = data.get('target_uid', '').strip()
+        call_notify = data.get('call_notify', 0)
+        if not target_uid:
+            return jsonify({'error': '参数不完整'}), 400
+        conn.execute('INSERT OR REPLACE INTO call_preferences (uid, target_uid, call_notify) VALUES (?,?,?)',
+                     (uid, target_uid, call_notify))
+        conn.commit()
+        conn.close()
+        return jsonify({'message': '设置成功', 'call_notify': call_notify})
+
+@app.route('/api/call/check-online', methods=['POST'])
+@token_required
+def call_check_online():
+    data = request.get_json()
+    target_uid = data.get('uid', '').strip()
+    last_seen = user_heartbeats.get(target_uid, 0)
+    online = time.time() - last_seen < 15
+    return jsonify({'online': online})
+
+@app.route('/api/call/invite', methods=['POST'])
+@token_required
+def call_invite():
+    sender = g.current_user['uid']
+    data = request.get_json()
+    target_uid = data.get('target_uid', '').strip()
+    call_type = data.get('call_type', 'video')
+    if not target_uid:
+        return jsonify({'error': '参数不完整'}), 400
+    last_seen = user_heartbeats.get(target_uid, 0)
+    if time.time() - last_seen > 15:
+        return jsonify({'error': '对方未在线'}), 400
+    # 检查对方是否允许通话通知（私聊）
+    conn = get_db()
+    pref = conn.execute('SELECT call_notify FROM call_preferences WHERE uid=? AND target_uid=?', (target_uid, sender)).fetchone()
+    if pref and pref['call_notify'] == 0:
+        conn.close()
+        return jsonify({'error': '你没有通话权限！'}), 400
+    user = conn.execute('SELECT name FROM users WHERE uid=?', (sender,)).fetchone()
+    conn.close()
+    sender_name = user['name'] if user else sender
+    call_id = str(uuid.uuid4())[:8]
+    active_calls[call_id] = {
+        'caller': sender, 'callee': target_uid,
+        'caller_name': sender_name, 'callee_name': '',
+        'call_type': call_type, 'status': 'ringing', 'created_at': time.time()
+    }
+    # Queue event for target
+    call_events.setdefault(target_uid, []).append({
+        'type': 'call_invite', 'call_id': call_id,
+        'from_uid': sender, 'from_name': sender_name, 'call_type': call_type
+    })
+    return jsonify({'call_id': call_id, 'message': '通话邀请已发送'}), 201
+
+@app.route('/api/call/respond', methods=['POST'])
+@token_required
+def call_respond():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    call_id = data.get('call_id', '')
+    action = data.get('action', '')
+    call = active_calls.get(call_id)
+    if not call:
+        return jsonify({'error': '通话不存在'}), 404
+    if action == 'accept':
+        call['status'] = 'connected'
+        call_events.setdefault(call['caller'], []).append({
+            'type': 'call_accepted', 'call_id': call_id
+        })
+    elif action == 'reject':
+        call['status'] = 'rejected'
+        call_events.setdefault(call['caller'], []).append({
+            'type': 'call_rejected', 'call_id': call_id
+        })
+    elif action == 'hangup':
+        call['status'] = 'ended'
+        other = call['callee'] if uid == call['caller'] else call['caller']
+        call_events.setdefault(other, []).append({
+            'type': 'call_hangup', 'call_id': call_id
+        })
+    return jsonify({'message': '操作成功'})
+
+# Extend SSE stream to deliver call events and track heartbeat
+_original_generate = None
+# We monkey-patch the stream endpoint to add call event delivery
+@app.route('/api/call/events')
+def call_events_stream():
+    uid = request.args.get('uid', '')
+    token = request.args.get('token', '')
+    if not uid or not token or tokens.get(token) != uid:
+        return jsonify({'error': '认证失败'}), 401
+    def generate():
+        tick = 0
+        while True:
+            user_heartbeats[uid] = time.time()
+            events = call_events.get(uid, [])
+            if events:
+                yield f"data: {json.dumps(events, ensure_ascii=False)}\n\n"
+                call_events[uid] = []
+            else:
+                yield ":\n\n"
+            tick += 1
+            if tick % 20 == 0:
+                _cleanup_stale_calls()
+            time.sleep(1.5)
+    return Response(generate(), mimetype='text/event-stream')
+
+# Periodic cleanup of stale call data (called from SSE streams)
+def _cleanup_stale_calls():
+    now = time.time()
+    for cid in list(active_calls.keys()):
+        if now - active_calls[cid].get('created_at', 0) > 120:
+            del active_calls[cid]
+    for uid in list(call_events.keys()):
+        call_events[uid] = [e for e in call_events[uid] if now - e.get('_ts', now) < 30]
+
+
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

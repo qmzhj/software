@@ -35,7 +35,8 @@
         margin-bottom: 24px;
       }
       .nav a {
-        display: block;
+        display: flex;
+        align-items: center;
         padding: 12px 16px;
         border-radius: 12px;
         color: #1e293b;
@@ -43,6 +44,7 @@
         font-weight: 500;
         margin: 4px 0;
         transition: 0.2s;
+        position: relative;
       }
       .nav a:hover,
       .nav a.active {
@@ -53,6 +55,16 @@
         background: var(--primary);
         color: white;
       }
+      .nav a .badge-dot {
+        display: none;
+        width: 8px;
+        height: 8px;
+        background: #ef4444;
+        border-radius: 50%;
+        margin-left: 6px;
+        flex-shrink: 0;
+      }
+      .nav a .badge-dot.show { display: inline-block; }
       .logout {
         background: transparent;
         border: 1px solid var(--border);
@@ -73,29 +85,14 @@
   <body>
     <div class="nav">
       <h2>🎓 校园通</h2>
-      <!--
-      <a
-        href="/chat"
-        target="contentFrame"
-        onclick="setActive(this)"
-        class="active"
-        >💬 聊天</a
-      >
-    -->
       <a href="/groups" target="contentFrame" onclick="setActive(this)"
         >👥 聊天</a
       >
-      <!--
-      <a href="/announcements" target="contentFrame" onclick="setActive(this)"
-        >📢 公告</a
-      >
-       -->
       <a href="/query" target="contentFrame" onclick="setActive(this)"
         >🔍 校园查询</a
       >
-
       <a href="/notifications" target="contentFrame" onclick="setActive(this)"
-        >🔔 通知</a
+        >🔔 通知<span class="badge-dot" id="notifBadge"></span></a
       >
       <a href="/profile" target="contentFrame" onclick="setActive(this)"
         >👤 个人设置</a
@@ -122,6 +119,25 @@
       window.onload = function () {
         if (!localStorage.getItem("token")) location.href = "/";
       };
+      async function checkUnread() {
+        try {
+          const token = localStorage.getItem("token");
+          if (!token) return;
+          const res = await fetch("/api/notifications/unread-count", {
+            headers: { Authorization: token }
+          });
+          const data = await res.json();
+          const badge = document.getElementById("notifBadge");
+          if (!badge) return;
+          if (data.count > 0) {
+            badge.classList.add("show");
+          } else {
+            badge.classList.remove("show");
+          }
+        } catch (e) {}
+      }
+      setInterval(checkUnread, 10000);
+      setTimeout(checkUnread, 1000);
     </script>
   </body>
 </html>
