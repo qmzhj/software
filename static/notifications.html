@@ -106,7 +106,7 @@
     </div>
 
     <script>
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
       if (!token) { location.href = "/"; }
 
       let ctxNotifId = null;
@@ -119,33 +119,45 @@
         return data;
       }
 
+      function getExtra(n) { try { return JSON.parse(n.extra || '{}'); } catch(e) { return {}; } }
+
       function renderCard(n, isUnread) {
         const markReadBtn = isUnread ? '<div style="text-align:right;margin-top:6px;"><button class="btn-sm btn-sm-muted" onclick="event.stopPropagation();markRead(\'' + n.id + '\', this)">✅ 标记已读</button></div>' : '';
         if (n.type === 'friend_request') {
-          return '<div class="card" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',false)">' +
-            '<h3>👤 好友申请 <span class="badge badge-friend">来自 ' + escapeHtml(n.from_name) + '</span></h3>' +
-            (n.message ? '<p>' + escapeHtml(n.message) + '</p>' : '') +
+          const isPending = n.status === 'pending';
+          const actions = isPending
+            ? '<div class="row-actions">' +
+              '<button class="btn-sm btn-sm-primary" onclick="event.stopPropagation();approveFriendRequest(\'' + n.id + '\')">同意</button>' +
+              '<button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();rejectFriendRequest(\'' + n.id + '\')">拒绝</button>' +
+            '</div>'
+            : '<p style="color:var(--text-muted);font-size:12px;margin-top:4px;">✅ 已处理</p>';
+          return '<div class="card' + (isUnread ? ' unread' : '') + '" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',false,\'' + n.type + '\')">' +
+            '<h3>👤 好友申请 <span class="badge badge-friend">来自 ' + escapeHtml(n.sender_name) + '</span></h3>' +
+            (n.content ? '<p>' + escapeHtml(n.content) + '</p>' : '') +
             '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
-            '<div class="row-actions">' +
-              '<button class="btn-sm btn-sm-primary" onclick="event.stopPropagation();approveFriendRequest(\'' + n.id + '\', this)">同意</button>' +
-              '<button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();rejectFriendRequest(\'' + n.id + '\', this)">拒绝</button>' +
-            '</div>' + markReadBtn + '</div>';
+            actions + markReadBtn + '</div>';
         } else if (n.type === 'chat_invite') {
-          return '<div class="card" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',false)">' +
-            '<h3>💬 聊天室邀请 <span class="badge badge-invite">来自 ' + escapeHtml(n.from_name) + '</span></h3>' +
-            '<p>邀请你加入聊天室「' + escapeHtml(n.chat_name) + '」</p>' +
+          const extra = getExtra(n);
+          const chatName = extra.chat_name || '';
+          const isPending = n.status === 'pending';
+          const actions = isPending
+            ? '<div class="row-actions">' +
+              '<button class="btn-sm btn-sm-primary" onclick="event.stopPropagation();approveChatInvite(\'' + n.id + '\')">同意</button>' +
+              '<button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();rejectChatInvite(\'' + n.id + '\')">拒绝</button>' +
+            '</div>'
+            : '<p style="color:var(--text-muted);font-size:12px;margin-top:4px;">✅ 已处理</p>';
+          return '<div class="card' + (isUnread ? ' unread' : '') + '" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',false,\'' + n.type + '\')">' +
+            '<h3>💬 聊天室邀请 <span class="badge badge-invite">来自 ' + escapeHtml(n.sender_name) + '</span></h3>' +
+            '<p>邀请你加入聊天室「' + escapeHtml(chatName) + '」</p>' +
             '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
-            '<div class="row-actions">' +
-              '<button class="btn-sm btn-sm-primary" onclick="event.stopPropagation();approveChatInvite(\'' + n.id + '\', this)">同意</button>' +
-              '<button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();rejectChatInvite(\'' + n.id + '\', this)">拒绝</button>' +
-            '</div>' + markReadBtn + '</div>';
+            actions + markReadBtn + '</div>';
         } else if (n.type === 'system') {
           const lockCls = n.is_locked ? ' locked' : '';
           const unreadCls = isUnread ? ' unread' : '';
           const lockIcon = n.is_locked ? '<span class="lock-icon">🔒</span>' : '';
           const canDelete = !n.is_locked;
-          return '<div class="card' + unreadCls + lockCls + '" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',' + (canDelete ? 'true' : 'false') + ')">' +
-            '<h3>📌 系统通知' + lockIcon + ' <span class="badge badge-system">' + escapeHtml(n.publisher) + '</span></h3>' +
+          return '<div class="card' + unreadCls + lockCls + '" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',' + (canDelete ? 'true' : 'false') + ',\'' + n.type + '\',' + (n.is_locked ? 'true' : 'false') + ')">' +
+            '<h3>📌 系统通知' + lockIcon + ' <span class="badge badge-system">' + escapeHtml(n.sender_name) + '</span></h3>' +
             '<p>' + escapeHtml(n.content) + '</p>' +
             '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
             markReadBtn + '</div>';
@@ -202,12 +214,17 @@
       }
 
       // Right-click context menu
-      function showCtx(event, nid, canDelete) {
+      let ctxNotifType = null;
+      let ctxNotifLocked = false;
+      function showCtx(event, nid, canDelete, ntype, isLocked) {
         event.preventDefault();
         event.stopPropagation();
         ctxNotifId = nid;
-        const isSys = nid.startsWith('sys_');
+        ctxNotifType = ntype;
+        ctxNotifLocked = isLocked;
+        const isSys = ntype === 'system';
         document.getElementById("ctxLock").style.display = isSys ? 'flex' : 'none';
+        document.getElementById("ctxLock").textContent = isLocked ? '🔓 解锁' : '🔒 锁定';
         document.getElementById("ctxDelete").style.display = canDelete ? 'flex' : 'none';
         const menu = document.getElementById("ctxMenu");
         menu.style.left = event.clientX + 'px';
@@ -226,44 +243,36 @@
         ctxNotifId = null;
       }
       async function ctxToggleLock() {
-        if (!ctxNotifId || !ctxNotifId.startsWith('sys_')) return;
+        if (!ctxNotifId || ctxNotifType !== 'system') return;
         try {
-          await api("/api/notifications/lock", { method: "POST", body: JSON.stringify({ id: ctxNotifId, locked: true }) });
+          await api("/api/notifications/lock", { method: "POST", body: JSON.stringify({ id: ctxNotifId, locked: !ctxNotifLocked }) });
           loadNotifications();
         } catch (e) { alert(e.message); }
         ctxNotifId = null;
       }
 
-      async function approveFriendRequest(id, btn) {
+      async function approveFriendRequest(id) {
         try {
-          const realId = id.replace('fr_', '');
-          await api("/api/friend-requests/" + realId + "/approve", { method: "POST" });
-          const card = btn.closest('.card');
-          card.innerHTML = '<p style="color:#10b981;font-weight:500;">✅ 已同意好友申请</p>';
+          await api("/api/notifications/" + id + "/approve", { method: "POST" });
+          loadNotifications();
         } catch (e) { alert(e.message); }
       }
-      async function rejectFriendRequest(id, btn) {
+      async function rejectFriendRequest(id) {
         try {
-          const realId = id.replace('fr_', '');
-          await api("/api/friend-requests/" + realId + "/reject", { method: "POST" });
-          const card = btn.closest('.card');
-          card.innerHTML = '<p style="color:var(--text-muted);">已拒绝</p>';
+          await api("/api/notifications/" + id + "/reject", { method: "POST" });
+          loadNotifications();
         } catch (e) { alert(e.message); }
       }
-      async function approveChatInvite(id, btn) {
+      async function approveChatInvite(id) {
         try {
-          const realId = id.replace('ci_', '');
-          const res = await api("/api/chat-invites/" + realId + "/approve", { method: "POST" });
-          const card = btn.closest('.card');
-          card.innerHTML = '<p style="color:#10b981;font-weight:500;">✅ 已接受邀请，加入聊天室「' + escapeHtml(res.chat_name) + '」</p>';
+          await api("/api/notifications/" + id + "/approve", { method: "POST" });
+          loadNotifications();
         } catch (e) { alert(e.message); }
       }
-      async function rejectChatInvite(id, btn) {
+      async function rejectChatInvite(id) {
         try {
-          const realId = id.replace('ci_', '');
-          await api("/api/chat-invites/" + realId + "/reject", { method: "POST" });
-          const card = btn.closest('.card');
-          card.innerHTML = '<p style="color:var(--text-muted);">已拒绝</p>';
+          await api("/api/notifications/" + id + "/reject", { method: "POST" });
+          loadNotifications();
         } catch (e) { alert(e.message); }
       }
 

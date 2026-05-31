@@ -110,18 +110,18 @@
       function logout() {
         fetch("/api/logout", {
           method: "POST",
-          headers: { Authorization: localStorage.getItem("token") },
+          headers: { Authorization: sessionStorage.getItem("token") },
         }).finally(() => {
-          localStorage.clear();
+          sessionStorage.clear();
           location.href = "/";
         });
       }
       window.onload = function () {
-        if (!localStorage.getItem("token")) location.href = "/";
+        if (!sessionStorage.getItem("token")) location.href = "/";
       };
       async function checkUnread() {
         try {
-          const token = localStorage.getItem("token");
+          const token = sessionStorage.getItem("token");
           if (!token) return;
           const res = await fetch("/api/notifications/unread-count", {
             headers: { Authorization: token }

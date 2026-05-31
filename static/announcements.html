@@ -114,9 +114,9 @@
     </div>
     <div class="content" id="annList"></div>
     <script>
-      let token = localStorage.getItem("token"),
-        currentRole = localStorage.getItem("role"),
-        currentUid = localStorage.getItem("uid");
+      let token = sessionStorage.getItem("token"),
+        currentRole = sessionStorage.getItem("role"),
+        currentUid = sessionStorage.getItem("uid");
       async function api(url, opt = {}) {
         const headers = { ...opt.headers };
         if (token) headers["Authorization"] = token;
@@ -191,7 +191,7 @@
         return d.innerHTML;
       }
       window.onload = function () {
-        if (!localStorage.getItem("token")) {
+        if (!sessionStorage.getItem("token")) {
           location.href = "/";
           return;
         }

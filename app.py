@@ -99,6 +99,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS user_group_chats
                  (group_id TEXT, chat_id TEXT, chat_name TEXT,
                   PRIMARY KEY(group_id, chat_id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_relations
+                 (uid TEXT, target_uid TEXT,
+                  is_friend INTEGER DEFAULT 0,
+                  is_blocked INTEGER DEFAULT 0,
+                  call_notify INTEGER DEFAULT 0,
+                  created_at REAL,
+                  PRIMARY KEY(uid, target_uid))''')
     c.execute('''CREATE TABLE IF NOT EXISTS friends
                  (uid TEXT, friend_uid TEXT, created_at REAL,
                   PRIMARY KEY(uid, friend_uid))''')
@@ -125,6 +132,31 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   chat_id TEXT, chat_name TEXT, from_uid TEXT, to_uid TEXT,
                   status TEXT DEFAULT 'pending', created_at REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS notifications
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  type TEXT NOT NULL,
+                  sender_uid TEXT NOT NULL,
+                  receiver_uid TEXT,
+                  content TEXT,
+                  extra TEXT DEFAULT '{}',
+                  status TEXT DEFAULT '',
+                  is_read INTEGER DEFAULT 0,
+                  is_locked INTEGER DEFAULT 0,
+                  created_at REAL)''')
+    # 数据迁移：notifications（存量数据导入）
+    row = c.execute("SELECT COUNT(*) FROM notifications").fetchone()
+    if row and row[0] == 0:
+        c.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, is_read, created_at) SELECT 'friend_request', from_uid, to_uid, message, '{}', status, is_read, created_at FROM friend_requests")
+        c.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, is_read, created_at) SELECT 'chat_invite', from_uid, to_uid, '', json_object('chat_id', chat_id, 'chat_name', chat_name), status, is_read, created_at FROM chat_invites")
+        c.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, is_read, is_locked, created_at) SELECT 'system', publisher, target_uid, content, '{}', is_read, is_locked, created_at FROM announcements WHERE target_uid IS NOT NULL AND target_uid != ''")
+    # 数据迁移：friends/blacklist/call_preferences → user_relations
+    row = c.execute("SELECT COUNT(*) FROM user_relations").fetchone()
+    if row and row[0] == 0:
+        c.execute("INSERT OR IGNORE INTO user_relations (uid, target_uid, is_friend, created_at) SELECT uid, friend_uid, 1, created_at FROM friends")
+        for buid, btarget in c.execute("SELECT uid, blocked_uid FROM blacklist").fetchall():
+            c.execute("INSERT INTO user_relations (uid, target_uid, is_blocked) VALUES (?,?,1) ON CONFLICT(uid,target_uid) DO UPDATE SET is_blocked=1", (buid, btarget))
+        for puid, ptarget, pnotify in c.execute("SELECT uid, target_uid, call_notify FROM call_preferences").fetchall():
+            c.execute("INSERT INTO user_relations (uid, target_uid, call_notify) VALUES (?,?,?) ON CONFLICT(uid,target_uid) DO UPDATE SET call_notify=?", (puid, ptarget, pnotify, pnotify))
     conn.commit()
     _seed_data(conn)
     conn.close()
@@ -736,7 +768,7 @@ def send_message():
 
     # Check if sender is blocked by receiver
     conn = get_db()
-    if conn.execute('SELECT 1 FROM blacklist WHERE uid=? AND blocked_uid=?', (receiver, sender)).fetchone():
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (receiver, sender)).fetchone():
         conn.close()
         return jsonify({'error':'你已被此用户拉黑，无法发送消息'}),403
 
@@ -851,7 +883,7 @@ def get_user_groups():
                                       (grp['group_id'],)).fetchone()[0]
         # 获取群组的成员数量（排除自己），系统群组需动态计算
         if grp['group_type'] == 'system' and grp['category'] == '即时聊天':
-            friend_uids = [r[0] for r in conn.execute('SELECT friend_uid FROM friends WHERE uid=?', (uid,)).fetchall()]
+            friend_uids = [r[0] for r in conn.execute('SELECT target_uid FROM user_relations WHERE uid=? AND is_friend=1', (uid,)).fetchall()]
             if friend_uids:
                 placeholders = ','.join('?' * len(friend_uids))
                 member_count = conn.execute(
@@ -864,7 +896,7 @@ def get_user_groups():
                 ).fetchone()[0]
         elif grp['group_type'] == 'system' and grp['category'] == '私聊':
             member_count = conn.execute(
-                'SELECT COUNT(*) FROM friends WHERE uid=?', (uid,)
+                'SELECT COUNT(*) FROM user_relations WHERE uid=? AND is_friend=1', (uid,)
             ).fetchone()[0]
         
         else:
@@ -925,7 +957,11 @@ def create_user_group():
         # 添加创建者
         conn.execute('INSERT INTO user_group_members VALUES (?,?,?)',
                      (group_id, creator, now))
-        # 自定义群组为私有，只对创建者可见，不添加其他成员
+        # 添加其他勾选的成员
+        for m_uid in member_uids:
+            if m_uid != creator:
+                conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                             (group_id, m_uid, now))
         # 添加聊天室
         for chat in chat_ids:
             if isinstance(chat, dict):
@@ -943,6 +979,25 @@ def create_user_group():
         return jsonify({'error': f'创建失败: {str(e)}'}), 500
     finally:
         conn.close()
+
+@app.route('/api/user-groups/batch-delete', methods=['POST'])
+@token_required
+def batch_delete_user_groups():
+    uid = g.current_user['uid']
+    data = request.get_json()
+    group_ids = data.get('group_ids', [])
+    conn = get_db()
+    deleted = 0
+    for gid in group_ids:
+        group = conn.execute('SELECT * FROM user_groups WHERE group_id=?', (gid,)).fetchone()
+        if group and group['creator'] == uid and group['group_type'] == 'custom':
+            conn.execute('DELETE FROM user_groups WHERE group_id=?', (gid,))
+            conn.execute('DELETE FROM user_group_members WHERE group_id=?', (gid,))
+            conn.execute('DELETE FROM user_group_chats WHERE group_id=?', (gid,))
+            deleted += 1
+    conn.commit()
+    conn.close()
+    return jsonify({'message': f'已删除 {deleted} 个群组', 'deleted_count': deleted})
 
 @app.route('/api/user-groups/<group_id>', methods=['PUT'])
 @token_required
@@ -1023,8 +1078,8 @@ def get_user_group_detail(group_id):
     # 对于系统群组（即时聊天、私聊），动态计算成员
     if group['group_type'] == 'system' and group['category'] == '即时聊天':
         # 所有用户 - 好友 - 自己
-        friend_uids = [r['friend_uid'] for r in 
-                       conn.execute('SELECT friend_uid FROM friends WHERE uid=?', (uid,)).fetchall()]
+        friend_uids = [r['target_uid'] for r in
+                       conn.execute('SELECT target_uid FROM user_relations WHERE uid=? AND is_friend=1', (uid,)).fetchall()]
         if friend_uids:
             placeholders = ','.join('?' * len(friend_uids))
             members = conn.execute(f'''SELECT uid, name, role FROM users 
@@ -1039,10 +1094,10 @@ def get_user_group_detail(group_id):
                        for m in members]
     elif group['group_type'] == 'system' and group['category'] == '私聊':
         # 好友
-        members = conn.execute('''SELECT u.uid, u.name, u.role, f.created_at as added_at
-                                   FROM friends f
-                                   JOIN users u ON f.friend_uid = u.uid
-                                   WHERE f.uid=?
+        members = conn.execute('''SELECT u.uid, u.name, u.role, r.created_at as added_at
+                                   FROM user_relations r
+                                   JOIN users u ON r.target_uid = u.uid
+                                   WHERE r.uid=? AND r.is_friend=1
                                    ORDER BY u.name''', (uid,)).fetchall()
         member_list = [{'uid': m['uid'], 'name': m['name'], 'role': m['role'], 'added_at': m['added_at']}
                        for m in members]
@@ -1146,8 +1201,8 @@ def create_chat_in_group(group_id):
         conn.execute('INSERT INTO groups_chat VALUES (?,?,?,?,?,?)',
                      (chat_id, name, uid, now, 'custom', category))
         # 加入创建者（admin）
-        conn.execute('INSERT INTO group_members VALUES (?,?,?,?)',
-                     (chat_id, uid, 'admin', now))
+        conn.execute('INSERT INTO group_members VALUES (?,?,?,?,?)',
+                     (chat_id, uid, 'admin', now, 0))
         creator_name_row = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
         creator_name = creator_name_row['name'] if creator_name_row else uid
         conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
@@ -1158,6 +1213,8 @@ def create_chat_in_group(group_id):
             if conn.execute('SELECT 1 FROM users WHERE uid=?', (m_uid,)).fetchone():
                 conn.execute('INSERT INTO chat_invites (chat_id, chat_name, from_uid, to_uid, status, created_at) VALUES (?,?,?,?,?,?)',
                              (chat_id, name, uid, m_uid, 'pending', now))
+                conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, created_at) VALUES ('chat_invite', ?, ?, '', json_object('chat_id',?, 'chat_name',?), 'pending', ?)",
+                             (uid, m_uid, chat_id, name, now))
         # 关联到群组
         conn.execute('INSERT INTO user_group_chats VALUES (?,?,?)',
                      (group_id, chat_id, name))
@@ -1246,10 +1303,10 @@ def batch_remove_from_group(group_id):
 def get_friends():
     uid = g.current_user['uid']
     conn = get_db()
-    friends = conn.execute('''SELECT u.uid, u.name, u.role, f.created_at
-                               FROM friends f
-                               JOIN users u ON f.friend_uid = u.uid
-                               WHERE f.uid=?
+    friends = conn.execute('''SELECT u.uid, u.name, u.role, r.created_at
+                               FROM user_relations r
+                               JOIN users u ON r.target_uid = u.uid
+                               WHERE r.uid=? AND r.is_friend=1
                                ORDER BY u.name''', (uid,)).fetchall()
     conn.close()
     return jsonify([{'uid': f['uid'], 'name': f['name'],
@@ -1274,6 +1331,8 @@ def add_friend():
     try:
         now = time.time()
         conn.execute('INSERT INTO friends VALUES (?,?,?)', (uid, friend_uid, now))
+        conn.execute("INSERT INTO user_relations (uid, target_uid, is_friend, created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?",
+                     (uid, friend_uid, now, now))
         conn.commit()
         return jsonify({'message': '添加好友成功'}), 201
     except Exception:
@@ -1294,12 +1353,15 @@ def remove_friend():
     user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
     user_name = user['name'] if user else uid
     conn.execute('DELETE FROM friends WHERE uid=? AND friend_uid=?', (uid, friend_uid))
-    # Also remove the reverse direction
     conn.execute('DELETE FROM friends WHERE uid=? AND friend_uid=?', (friend_uid, uid))
+    conn.execute("UPDATE user_relations SET is_friend=0 WHERE uid=? AND target_uid=?", (uid, friend_uid))
+    conn.execute("UPDATE user_relations SET is_friend=0 WHERE uid=? AND target_uid=?", (friend_uid, uid))
     # Send notification to the removed friend
     content = f'{user_name}已取消和你的好友关系'
     conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
                  (user_name, 'notification', '', content, friend_uid, time.time()))
+    conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, created_at) VALUES ('system', ?, ?, ?, ?)",
+                 (user_name, friend_uid, content, time.time()))
     conn.commit()
     conn.close()
     return jsonify({'message': '已删除好友'})
@@ -1319,12 +1381,15 @@ def send_friend_request():
     conn = get_db()
     if not conn.execute('SELECT 1 FROM users WHERE uid=?', (to_uid,)).fetchone():
         return jsonify({'error': '用户不存在'}), 404
-    if conn.execute('SELECT 1 FROM friends WHERE uid=? AND friend_uid=?', (uid, to_uid)).fetchone():
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_friend=1', (uid, to_uid)).fetchone():
         return jsonify({'error': '已经是好友了'}), 400
-    if conn.execute('SELECT 1 FROM friend_requests WHERE from_uid=? AND to_uid=? AND status="pending"', (uid, to_uid)).fetchone():
+    if conn.execute('SELECT 1 FROM friend_requests WHERE from_uid=? AND to_uid=? AND status="pending"', (uid, to_uid)).fetchone() or \
+       conn.execute('SELECT 1 FROM notifications WHERE sender_uid=? AND receiver_uid=? AND type="friend_request" AND status="pending"', (uid, to_uid)).fetchone():
         return jsonify({'error': '已发送过好友申请，请等待对方处理'}), 400
     conn.execute('INSERT INTO friend_requests (from_uid, to_uid, message, status, created_at) VALUES (?,?,?,?,?)',
                  (uid, to_uid, message, 'pending', time.time()))
+    conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, status, created_at) VALUES ('friend_request', ?, ?, ?, 'pending', ?)",
+                 (uid, to_uid, message, time.time()))
     conn.commit(); conn.close()
     return jsonify({'message': '好友申请已发送'}), 201
 
@@ -1333,7 +1398,7 @@ def send_friend_request():
 def get_friend_requests():
     uid = g.current_user['uid']
     conn = get_db()
-    reqs = conn.execute("SELECT fr.*, u.name as from_name FROM friend_requests fr JOIN users u ON fr.from_uid = u.uid WHERE fr.to_uid=? AND fr.status='pending' ORDER BY fr.created_at DESC", (uid,)).fetchall()
+    reqs = conn.execute("SELECT n.id, n.sender_uid as from_uid, u.name as from_name, n.content as message, n.created_at FROM notifications n JOIN users u ON n.sender_uid = u.uid WHERE n.receiver_uid=? AND n.type='friend_request' AND n.status='pending' ORDER BY n.created_at DESC", (uid,)).fetchall()
     conn.close()
     return jsonify([{'id':r['id'],'from_uid':r['from_uid'],'from_name':r['from_name'],
                      'message':r['message'],'created_at':r['created_at']} for r in reqs])
@@ -1345,10 +1410,25 @@ def approve_friend_request(req_id):
     conn = get_db()
     req = conn.execute('SELECT * FROM friend_requests WHERE id=? AND to_uid=? AND status="pending"', (req_id, uid)).fetchone()
     if not req:
-        return jsonify({'error': '申请不存在'}), 404
+        # 也查 notifications 表
+        n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND type="friend_request" AND status="pending"', (req_id, uid)).fetchone()
+        if not n:
+            return jsonify({'error': '申请不存在'}), 404
+        conn.execute("UPDATE notifications SET status='approved' WHERE id=?", (req_id,))
+        now = time.time()
+        conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (n['sender_uid'], uid, now))
+        conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (uid, n['sender_uid'], now))
+        conn.execute("INSERT INTO user_relations (uid, target_uid, is_friend, created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?", (n['sender_uid'], uid, now, now))
+        conn.execute("INSERT INTO user_relations (uid, target_uid, is_friend, created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?", (uid, n['sender_uid'], now, now))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已同意好友申请'})
     conn.execute('UPDATE friend_requests SET status="approved" WHERE id=?', (req_id,))
-    conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (req['from_uid'], uid, time.time()))
-    conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (uid, req['from_uid'], time.time()))
+    conn.execute("UPDATE notifications SET status='approved' WHERE sender_uid=? AND receiver_uid=? AND type='friend_request' AND status='pending'", (req['from_uid'], uid))
+    now = time.time()
+    conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (req['from_uid'], uid, now))
+    conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (uid, req['from_uid'], now))
+    conn.execute("INSERT INTO user_relations (uid, target_uid, is_friend, created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?", (req['from_uid'], uid, now, now))
+    conn.execute("INSERT INTO user_relations (uid, target_uid, is_friend, created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?", (uid, req['from_uid'], now, now))
     conn.commit(); conn.close()
     return jsonify({'message': '已同意好友申请'})
 
@@ -1359,8 +1439,14 @@ def reject_friend_request(req_id):
     conn = get_db()
     req = conn.execute('SELECT * FROM friend_requests WHERE id=? AND to_uid=? AND status="pending"', (req_id, uid)).fetchone()
     if not req:
-        return jsonify({'error': '申请不存在'}), 404
+        n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND type="friend_request" AND status="pending"', (req_id, uid)).fetchone()
+        if not n:
+            return jsonify({'error': '申请不存在'}), 404
+        conn.execute("UPDATE notifications SET status='rejected', is_read=1 WHERE id=?", (req_id,))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已拒绝好友申请'})
     conn.execute('UPDATE friend_requests SET status="rejected" WHERE id=?', (req_id,))
+    conn.execute("UPDATE notifications SET status='rejected', is_read=1 WHERE sender_uid=? AND receiver_uid=? AND type='friend_request' AND status='pending'", (req['from_uid'], uid))
     conn.commit(); conn.close()
     return jsonify({'message': '已拒绝好友申请'})
 
@@ -1370,26 +1456,22 @@ def reject_friend_request(req_id):
 def get_notifications():
     uid = g.current_user['uid']
     conn = get_db()
-    friend_reqs = conn.execute("SELECT fr.id, fr.from_uid, fr.message, fr.created_at, fr.is_read, u.name as from_name, 'friend_request' as type FROM friend_requests fr JOIN users u ON fr.from_uid = u.uid WHERE fr.to_uid=? AND fr.status='pending'", (uid,)).fetchall()
-    chat_invites = conn.execute("SELECT ci.id, ci.chat_id, ci.chat_name, ci.from_uid, ci.created_at, ci.is_read, u.name as from_name, 'chat_invite' as type FROM chat_invites ci JOIN users u ON ci.from_uid = u.uid WHERE ci.to_uid=? AND ci.status='pending'", (uid,)).fetchall()
-    sys_notifs = conn.execute("SELECT id, publisher, content, created_at, is_read, is_locked FROM announcements WHERE target_uid=? ORDER BY created_at DESC", (uid,)).fetchall()
+    rows = conn.execute("SELECT n.*, u.name as sender_name FROM notifications n LEFT JOIN users u ON n.sender_uid = u.uid WHERE n.receiver_uid=? ORDER BY n.created_at DESC", (uid,)).fetchall()
     conn.close()
     notifs = []
-    for r in friend_reqs:
-        notifs.append({'id': 'fr_' + str(r['id']), 'type': 'friend_request', 'from_uid': r['from_uid'],
-                       'from_name': r['from_name'], 'message': r['message'], 'created_at': r['created_at'],
-                       'is_read': r['is_read'] == '1' or r['is_read'] == 1})
-    for ci in chat_invites:
-        notifs.append({'id': 'ci_' + str(ci['id']), 'type': 'chat_invite', 'chat_id': ci['chat_id'],
-                       'chat_name': ci['chat_name'], 'from_uid': ci['from_uid'],
-                       'from_name': ci['from_name'], 'created_at': ci['created_at'],
-                       'is_read': ci['is_read'] == '1' or ci['is_read'] == 1})
-    for s in sys_notifs:
-        notifs.append({'id': 'sys_' + str(s['id']), 'type': 'system', 'content': s['content'],
-                       'publisher': s['publisher'], 'is_read': s['is_read'] == '1' or s['is_read'] == 1,
-                       'is_locked': s['is_locked'] == '1' or s['is_locked'] == 1,
-                       'created_at': s['created_at']})
-    notifs.sort(key=lambda n: n['created_at'], reverse=True)
+    for n in rows:
+        notifs.append({
+            'id': n['id'],
+            'type': n['type'],
+            'sender_uid': n['sender_uid'],
+            'sender_name': n['sender_name'] or n['sender_uid'],
+            'content': n['content'] or '',
+            'extra': n['extra'] or '{}',
+            'status': n['status'] or '',
+            'is_read': n['is_read'] == '1' or n['is_read'] == 1,
+            'is_locked': n['is_locked'] == '1' or n['is_locked'] == 1,
+            'created_at': n['created_at']
+        })
     return jsonify(notifs)
 
 @app.route('/api/notifications/system', methods=['POST'])
@@ -1406,6 +1488,8 @@ def send_system_notification():
     publisher = user['name'] if user else uid
     conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
                  (publisher, 'notification', '', content, target_uid, time.time()))
+    conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, created_at) VALUES ('system', ?, ?, ?, ?)",
+                 (publisher, target_uid, content, time.time()))
     conn.commit(); conn.close()
     return jsonify({'message': '通知已发送'}), 201
 
@@ -1416,15 +1500,19 @@ def mark_notification_read():
     data = request.get_json()
     notif_id = data.get('id', '')
     conn = get_db()
-    if notif_id.startswith('sys_'):
-        ann_id = notif_id.replace('sys_', '')
-        conn.execute("UPDATE announcements SET is_read=1 WHERE id=? AND target_uid=?", (ann_id, uid))
-    elif notif_id.startswith('fr_'):
-        req_id = notif_id.replace('fr_', '')
-        conn.execute("UPDATE friend_requests SET is_read=1 WHERE id=? AND to_uid=?", (req_id, uid))
-    elif notif_id.startswith('ci_'):
-        inv_id = notif_id.replace('ci_', '')
-        conn.execute("UPDATE chat_invites SET is_read=1 WHERE id=? AND to_uid=?", (inv_id, uid))
+    is_old_prefix = str(notif_id).startswith('fr_') or str(notif_id).startswith('ci_') or str(notif_id).startswith('sys_')
+    if is_old_prefix:
+        if notif_id.startswith('sys_'):
+            conn.execute("UPDATE announcements SET is_read=1 WHERE id=? AND target_uid=?", (notif_id.replace('sys_', ''), uid))
+        elif notif_id.startswith('fr_'):
+            conn.execute("UPDATE friend_requests SET is_read=1 WHERE id=? AND to_uid=?", (notif_id.replace('fr_', ''), uid))
+        elif notif_id.startswith('ci_'):
+            conn.execute("UPDATE chat_invites SET is_read=1 WHERE id=? AND to_uid=?", (notif_id.replace('ci_', ''), uid))
+    else:
+        try:
+            conn.execute("UPDATE notifications SET is_read=1 WHERE id=? AND receiver_uid=?", (int(notif_id), uid))
+        except ValueError:
+            pass
     conn.commit(); conn.close()
     return jsonify({'message': '已标记已读'})
 
@@ -1433,6 +1521,7 @@ def mark_notification_read():
 def mark_all_notifications_read():
     uid = g.current_user['uid']
     conn = get_db()
+    conn.execute("UPDATE notifications SET is_read=1 WHERE receiver_uid=? AND (is_read=0 OR is_read IS NULL)", (uid,))
     conn.execute("UPDATE announcements SET is_read=1 WHERE target_uid=? AND (is_read IS NULL OR is_read=0)", (uid,))
     conn.commit(); conn.close()
     return jsonify({'message': '全部已读'})
@@ -1442,7 +1531,7 @@ def mark_all_notifications_read():
 def unread_notification_count():
     uid = g.current_user['uid']
     conn = get_db()
-    count = conn.execute("SELECT COUNT(*) as cnt FROM announcements WHERE target_uid=? AND (is_read IS NULL OR is_read=0 OR is_read='0')", (uid,)).fetchone()
+    count = conn.execute("SELECT COUNT(*) as cnt FROM notifications WHERE receiver_uid=? AND (is_read=0 OR is_read IS NULL)", (uid,)).fetchone()
     conn.close()
     return jsonify({'count': count['cnt'] if count else 0})
 
@@ -1453,22 +1542,36 @@ def delete_notification():
     data = request.get_json()
     notif_id = data.get('id', '')
     conn = get_db()
-    if notif_id.startswith('sys_'):
-        ann_id = notif_id.replace('sys_', '')
-        ann = conn.execute('SELECT * FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid)).fetchone()
-        if not ann:
+    is_old_prefix = str(notif_id).startswith('fr_') or str(notif_id).startswith('ci_') or str(notif_id).startswith('sys_')
+    if is_old_prefix:
+        if notif_id.startswith('sys_'):
+            ann_id = notif_id.replace('sys_', '')
+            ann = conn.execute('SELECT * FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid)).fetchone()
+            if not ann:
+                conn.close()
+                return jsonify({'error': '通知不存在'}), 404
+            if ann.get('is_locked') in ('1', 1, 'true'):
+                conn.close()
+                return jsonify({'error': '通知已被锁定，无法删除'}), 403
+            conn.execute('DELETE FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid))
+        elif notif_id.startswith('fr_'):
+            conn.execute('DELETE FROM friend_requests WHERE id=? AND to_uid=?', (notif_id.replace('fr_', ''), uid))
+        elif notif_id.startswith('ci_'):
+            conn.execute('DELETE FROM chat_invites WHERE id=? AND to_uid=?', (notif_id.replace('ci_', ''), uid))
+    else:
+        try:
+            nid = int(notif_id)
+            n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=?', (nid, uid)).fetchone()
+            if not n:
+                conn.close()
+                return jsonify({'error': '通知不存在'}), 404
+            if n.get('is_locked') in ('1', 1, 'true'):
+                conn.close()
+                return jsonify({'error': '通知已被锁定，无法删除'}), 403
+            conn.execute('DELETE FROM notifications WHERE id=? AND receiver_uid=?', (nid, uid))
+        except ValueError:
             conn.close()
-            return jsonify({'error': '通知不存在'}), 404
-        if ann.get('is_locked') in ('1', 1, 'true'):
-            conn.close()
-            return jsonify({'error': '通知已被锁定，无法删除'}), 403
-        conn.execute('DELETE FROM announcements WHERE id=? AND target_uid=?', (ann_id, uid))
-    elif notif_id.startswith('fr_'):
-        req_id = notif_id.replace('fr_', '')
-        conn.execute('DELETE FROM friend_requests WHERE id=? AND to_uid=?', (req_id, uid))
-    elif notif_id.startswith('ci_'):
-        inv_id = notif_id.replace('ci_', '')
-        conn.execute('DELETE FROM chat_invites WHERE id=? AND to_uid=?', (inv_id, uid))
+            return jsonify({'error': '无效的通知ID'}), 400
     conn.commit(); conn.close()
     return jsonify({'message': '已删除'})
 
@@ -1477,6 +1580,7 @@ def delete_notification():
 def delete_read_notifications():
     uid = g.current_user['uid']
     conn = get_db()
+    conn.execute("DELETE FROM notifications WHERE receiver_uid=? AND (is_read=1 OR is_read='1') AND (is_locked IS NULL OR is_locked=0 OR is_locked='0')", (uid,))
     conn.execute("DELETE FROM announcements WHERE target_uid=? AND (is_read=1 OR is_read='1') AND (is_locked IS NULL OR is_locked=0 OR is_locked='0')", (uid,))
     conn.execute("DELETE FROM friend_requests WHERE to_uid=? AND (is_read=1 OR is_read='1')", (uid,))
     conn.execute("DELETE FROM chat_invites WHERE to_uid=? AND (is_read=1 OR is_read='1')", (uid,))
@@ -1490,14 +1594,77 @@ def lock_notification():
     data = request.get_json()
     notif_id = data.get('id', '')
     locked = data.get('locked', True)
-    if not notif_id.startswith('sys_'):
-        return jsonify({'message': '无需操作'})
-    ann_id = notif_id.replace('sys_', '')
     conn = get_db()
     val = 1 if locked else 0
-    conn.execute("UPDATE announcements SET is_locked=? WHERE id=? AND target_uid=?", (val, ann_id, uid))
+    try:
+        nid = int(notif_id)
+        conn.execute("UPDATE notifications SET is_locked=? WHERE id=? AND receiver_uid=? AND type='system'", (val, nid, uid))
+    except ValueError:
+        if notif_id.startswith('sys_'):
+            ann_id = notif_id.replace('sys_', '')
+            conn.execute("UPDATE announcements SET is_locked=? WHERE id=? AND target_uid=?", (val, ann_id, uid))
+        else:
+            conn.close()
+            return jsonify({'message': '无需操作'})
     conn.commit(); conn.close()
     return jsonify({'message': '操作成功'})
+
+
+# ---------- 统一审批端点（notifications 表） ----------
+@app.route('/api/notifications/<int:notif_id>/approve', methods=['POST'])
+@token_required
+def approve_notification(notif_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND status="pending"', (notif_id, uid)).fetchone()
+    if not n:
+        return jsonify({'error': '通知不存在或已处理'}), 404
+    if n['type'] == 'friend_request':
+        now = time.time()
+        conn.execute("INSERT INTO user_relations (uid,target_uid,is_friend,created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?",
+                     (n['sender_uid'], uid, now, now))
+        conn.execute("INSERT INTO user_relations (uid,target_uid,is_friend,created_at) VALUES (?,?,1,?) ON CONFLICT(uid,target_uid) DO UPDATE SET is_friend=1, created_at=?",
+                     (uid, n['sender_uid'], now, now))
+        conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (n['sender_uid'], uid, now))
+        conn.execute('INSERT OR IGNORE INTO friends VALUES (?,?,?)', (uid, n['sender_uid'], now))
+        conn.execute("UPDATE friend_requests SET status='approved' WHERE from_uid=? AND to_uid=? AND status='pending'", (n['sender_uid'], uid))
+        conn.execute("UPDATE notifications SET status='approved', is_read=1 WHERE id=?", (notif_id,))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已同意好友申请'})
+    elif n['type'] == 'chat_invite':
+        extra = json.loads(n['extra'] or '{}')
+        chat_id = extra.get('chat_id', '')
+        chat_name = extra.get('chat_name', '')
+        now = time.time()
+        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)', (chat_id, uid, 'member', now, 0))
+        conn.execute("UPDATE chat_invites SET status='approved' WHERE chat_id=? AND to_uid=? AND status='pending'", (chat_id, uid))
+        conn.execute("UPDATE notifications SET status='approved' WHERE id=?", (notif_id,))
+        user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        user_name = user['name'] if user else uid
+        conn.execute("INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)",
+                     (chat_id, 'system', f'{user_name} 接受了邀请加入聊天室', 'system', now))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已接受邀请', 'chat_id': chat_id, 'chat_name': chat_name})
+    else:
+        return jsonify({'error': '该类型通知不支持审批操作'}), 400
+
+@app.route('/api/notifications/<int:notif_id>/reject', methods=['POST'])
+@token_required
+def reject_notification(notif_id):
+    uid = g.current_user['uid']
+    conn = get_db()
+    n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND status="pending"', (notif_id, uid)).fetchone()
+    if not n:
+        return jsonify({'error': '通知不存在或已处理'}), 404
+    conn.execute("UPDATE notifications SET status='rejected', is_read=1 WHERE id=?", (notif_id,))
+    if n['type'] == 'friend_request':
+        conn.execute("UPDATE friend_requests SET status='rejected' WHERE from_uid=? AND to_uid=? AND status='pending'", (n['sender_uid'], uid))
+    elif n['type'] == 'chat_invite':
+        extra = json.loads(n['extra'] or '{}')
+        chat_id = extra.get('chat_id', '')
+        conn.execute("UPDATE chat_invites SET status='rejected' WHERE chat_id=? AND to_uid=? AND status='pending'", (chat_id, uid))
+    conn.commit(); conn.close()
+    return jsonify({'message': '已拒绝'})
 
 # ---------- 聊天室邀请处理 ----------
 @app.route('/api/chat-invites/<int:invite_id>/approve', methods=['POST'])
@@ -1507,10 +1674,25 @@ def approve_chat_invite(invite_id):
     conn = get_db()
     inv = conn.execute('SELECT * FROM chat_invites WHERE id=? AND to_uid=? AND status="pending"', (invite_id, uid)).fetchone()
     if not inv:
-        return jsonify({'error': '邀请不存在'}), 404
+        n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND type="chat_invite" AND status="pending"', (invite_id, uid)).fetchone()
+        if not n:
+            return jsonify({'error': '邀请不存在'}), 404
+        now = time.time()
+        extra = json.loads(n['extra'] or '{}')
+        chat_id = extra.get('chat_id', '')
+        chat_name = extra.get('chat_name', '')
+        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)', (chat_id, uid, 'member', now, 0))
+        conn.execute("UPDATE notifications SET status='approved' WHERE id=?", (invite_id,))
+        user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+        user_name = user['name'] if user else uid
+        conn.execute("INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)",
+                     (chat_id, 'system', f'{user_name} 接受了邀请加入聊天室', 'system', now))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已接受邀请', 'chat_id': chat_id, 'chat_name': chat_name})
     now = time.time()
-    conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?)', (inv['chat_id'], uid, 'member', now))
+    conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)', (inv['chat_id'], uid, 'member', now, 0))
     conn.execute('UPDATE chat_invites SET status="approved" WHERE id=?', (invite_id,))
+    conn.execute("UPDATE notifications SET status='approved' WHERE sender_uid=? AND receiver_uid=? AND type='chat_invite' AND status='pending'", (inv['from_uid'], uid))
     user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
     user_name = user['name'] if user else uid
     conn.execute("INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)",
@@ -1525,8 +1707,14 @@ def reject_chat_invite(invite_id):
     conn = get_db()
     inv = conn.execute('SELECT * FROM chat_invites WHERE id=? AND to_uid=? AND status="pending"', (invite_id, uid)).fetchone()
     if not inv:
-        return jsonify({'error': '邀请不存在'}), 404
+        n = conn.execute('SELECT * FROM notifications WHERE id=? AND receiver_uid=? AND type="chat_invite" AND status="pending"', (invite_id, uid)).fetchone()
+        if not n:
+            return jsonify({'error': '邀请不存在'}), 404
+        conn.execute("UPDATE notifications SET status='rejected', is_read=1 WHERE id=?", (invite_id,))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已拒绝邀请'})
     conn.execute('UPDATE chat_invites SET status="rejected" WHERE id=?', (invite_id,))
+    conn.execute("UPDATE notifications SET status='rejected', is_read=1 WHERE sender_uid=? AND receiver_uid=? AND type='chat_invite' AND status='pending'", (inv['from_uid'], uid))
     conn.commit(); conn.close()
     return jsonify({'message': '已拒绝邀请'})
 
@@ -1536,9 +1724,9 @@ def reject_chat_invite(invite_id):
 def get_blacklist():
     uid = g.current_user['uid']
     conn = get_db()
-    blocked = conn.execute('''SELECT u.uid, u.name, u.role FROM blacklist b
-                               JOIN users u ON b.blocked_uid = u.uid
-                               WHERE b.uid=?''', (uid,)).fetchall()
+    blocked = conn.execute('''SELECT u.uid, u.name, u.role FROM user_relations r
+                               JOIN users u ON r.target_uid = u.uid
+                               WHERE r.uid=? AND r.is_blocked=1''', (uid,)).fetchall()
     conn.close()
     return jsonify([{'uid': b['uid'], 'name': b['name'], 'role': b['role']} for b in blocked])
 
@@ -1555,11 +1743,15 @@ def add_blacklist():
     conn = get_db()
     try:
         conn.execute('INSERT OR IGNORE INTO blacklist VALUES (?,?)', (uid, blocked_uid))
+        conn.execute("INSERT INTO user_relations (uid, target_uid, is_blocked) VALUES (?,?,1) ON CONFLICT(uid,target_uid) DO UPDATE SET is_blocked=1",
+                     (uid, blocked_uid))
         user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
         user_name = user['name'] if user else uid
         content = f'{user_name}已将你拉黑'
         conn.execute("INSERT INTO announcements (publisher, unit, title, content, target_uid, is_read, created_at) VALUES (?,?,?,?,?,0,?)",
                      (user_name, 'notification', '', content, blocked_uid, time.time()))
+        conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, created_at) VALUES ('system', ?, ?, ?, ?)",
+                     (user_name, blocked_uid, content, time.time()))
         conn.commit()
         return jsonify({'message': '已拉黑'}), 201
     except Exception as e:
@@ -1577,6 +1769,7 @@ def remove_blacklist():
         return jsonify({'error': '用户ID不能为空'}), 400
     conn = get_db()
     conn.execute('DELETE FROM blacklist WHERE uid=? AND blocked_uid=?', (uid, blocked_uid))
+    conn.execute("UPDATE user_relations SET is_blocked=0 WHERE uid=? AND target_uid=?", (uid, blocked_uid))
     conn.commit()
     conn.close()
     return jsonify({'message': '已取消拉黑'})
@@ -1653,8 +1846,8 @@ def ensure_default_groups(uid):
                         conn.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
                                      (chat_id, chat_name + '聊天室', 'system', now, 'custom', '课程'))
                         # 将当前用户加入该聊天室
-                        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?)',
-                                     (chat_id, uid, 'member', now))
+                        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                                     (chat_id, uid, 'member', now, 0))
                         # 关联聊天室到课程群组
                         conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
                                      (course_group_id, chat_id, chat_name))
@@ -1700,7 +1893,7 @@ def create_group():
                      (group_id, name, creator, now, 'custom', category))
         for m in all_members:
             role = 'admin' if m == creator else 'member'
-            conn.execute('INSERT INTO group_members VALUES (?,?,?,?)', (group_id, m, role, now))
+            conn.execute('INSERT INTO group_members VALUES (?,?,?,?,?)', (group_id, m, role, now, 0))
         conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
                      (group_id, 'system', '聊天室已创建', 'system', now))
         conn.commit()
@@ -1788,10 +1981,21 @@ def revoke_group_message(msg_id):
         conn.close()
 
 def _dissolve_chat_room(conn, group_id, reason):
-    """解散聊天室：删除成员、插入解散原因、删除聊天室，保留消息"""
+    """解散聊天室：删除成员、插入解散原因、删除聊天室，保留消息，发送解散通知"""
+    # 先获取聊天室名称和成员列表（删除前）
+    chat = conn.execute('SELECT name FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    chat_name = chat['name'] if chat else group_id
+    members = conn.execute('SELECT uid FROM group_members WHERE group_id=?', (group_id,)).fetchall()
+
     conn.execute('DELETE FROM group_members WHERE group_id=?', (group_id,))
     conn.execute('INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)',
                  (group_id, 'system', reason, 'system', time.time()))
+    # 发送系统通知给所有成员
+    now = time.time()
+    for m in members:
+        conn.execute(
+            "INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, created_at) VALUES ('system', 'system', ?, ?, '{}', 'sent', ?)",
+            (m['uid'], f'聊天室「{chat_name}」已解散', now))
     conn.execute('DELETE FROM groups_chat WHERE group_id=?', (group_id,))
     conn.execute('DELETE FROM user_group_chats WHERE chat_id=?', (group_id,))
     conn.commit()
@@ -1803,6 +2007,11 @@ def leave_group(group_id):
     conn = get_db()
     member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?',(group_id,uid)).fetchone()
     if not member: return jsonify({'error':'你不在群中'}),403
+    # 检查是否为系统创建的聊天室（课程/班级群等）
+    chat = conn.execute('SELECT creator FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    if chat and chat['creator'] == 'system':
+        conn.close()
+        return jsonify({'error':'课程/班级群无法退出！'}),403
     if member['role'] == 'admin':
         count = conn.execute('SELECT COUNT(*) FROM group_members WHERE group_id=?',(group_id,)).fetchone()[0]
         if count > 1:
@@ -1866,6 +2075,8 @@ def invite_to_chat(group_id):
             if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?', (group_id, m_uid)).fetchone():
                 conn.execute('INSERT INTO chat_invites (chat_id, chat_name, from_uid, to_uid, status, created_at) VALUES (?,?,?,?,?,?)',
                              (group_id, chat_name, uid, m_uid, 'pending', now))
+                conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, created_at) VALUES ('chat_invite', ?, ?, '', json_object('chat_id',?, 'chat_name',?), 'pending', ?)",
+                             (uid, m_uid, group_id, chat_name, now))
                 invited += 1
     conn.commit()
     conn.close()
@@ -2149,7 +2360,7 @@ def call_preference():
         target_uid = request.args.get('with', '').strip()
         if not target_uid:
             return jsonify({'error': '参数不完整'}), 400
-        row = conn.execute('SELECT call_notify FROM call_preferences WHERE uid=? AND target_uid=?', (uid, target_uid)).fetchone()
+        row = conn.execute('SELECT call_notify FROM user_relations WHERE uid=? AND target_uid=?', (uid, target_uid)).fetchone()
         conn.close()
         return jsonify({'call_notify': row['call_notify'] if row else 0})
     else:
@@ -2160,6 +2371,8 @@ def call_preference():
             return jsonify({'error': '参数不完整'}), 400
         conn.execute('INSERT OR REPLACE INTO call_preferences (uid, target_uid, call_notify) VALUES (?,?,?)',
                      (uid, target_uid, call_notify))
+        conn.execute("INSERT INTO user_relations (uid, target_uid, call_notify) VALUES (?,?,?) ON CONFLICT(uid,target_uid) DO UPDATE SET call_notify=?",
+                     (uid, target_uid, call_notify, call_notify))
         conn.commit()
         conn.close()
         return jsonify({'message': '设置成功', 'call_notify': call_notify})
@@ -2187,7 +2400,7 @@ def call_invite():
         return jsonify({'error': '对方未在线'}), 400
     # 检查对方是否允许通话通知（私聊）
     conn = get_db()
-    pref = conn.execute('SELECT call_notify FROM call_preferences WHERE uid=? AND target_uid=?', (target_uid, sender)).fetchone()
+    pref = conn.execute('SELECT call_notify FROM user_relations WHERE uid=? AND target_uid=?', (target_uid, sender)).fetchone()
     if pref and pref['call_notify'] == 0:
         conn.close()
         return jsonify({'error': '你没有通话权限！'}), 400

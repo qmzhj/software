@@ -243,6 +243,11 @@
     }
     .ctx-menu .ctx-item:hover { background:#f1f5f9; }
     .ctx-menu .ctx-item.danger { color:var(--danger); }
+    /* Group multi-select */
+    .group-item.disabled { opacity:0.5; cursor:not-allowed; }
+    .group-item .group-cb { margin-right:8px; }
+    .batch-bar { display:flex; gap:6px; padding:8px 4px; align-items:center; }
+    .batch-bar .count { font-size:12px; color:var(--text-muted); flex:1; }
   </style>
 </head>
 <body>
@@ -252,6 +257,7 @@
       <span id="sidebarTitle">📁 我的群组</span>
       <span id="sidebarActions">
         <button onclick="showCreateGroupModal()">+ 新建</button>
+        <button id="groupMultiToggle" onclick="toggleGroupMultiSelect()" style="margin-left:4px;">☐ 多选</button>
       </span>
     </div>
     <div class="toolbar" id="detailToolbar" style="display:none">
@@ -592,8 +598,8 @@
   </div>
 
   <script>
-    const token = localStorage.getItem("token");
-    const currentUid = localStorage.getItem("uid");
+    const token = sessionStorage.getItem("token");
+    const currentUid = sessionStorage.getItem("uid");
 
     // State
     let viewState = "groups"; // "groups" | "group-detail"
@@ -603,6 +609,7 @@
     let eventSource = null;
     let allUsers = [];
     let multiSelectMode = false;
+    let groupMultiSelectMode = false;
     let currentUserRole = ''; // role in current chat room
 
     // Context menu state
@@ -668,7 +675,7 @@
         // For private messages, fill sender_name
         fullMsgs.forEach(m => {
           if (!m.sender_name) {
-            m.sender_name = m.sender === currentUid ? (localStorage.getItem('name') || '我') : (privateChatPeerName || m.sender);
+            m.sender_name = m.sender === currentUid ? (sessionStorage.getItem('name') || '我') : (privateChatPeerName || m.sender);
           }
         });
         showForwardModal(fullMsgs);
@@ -774,23 +781,29 @@
       try {
         const groups = await api("/api/user-groups");
         const list = document.getElementById("groupList");
-        list.innerHTML = groups.map(g => `
-          <div class="group-item" data-gid="${g.group_id}" onclick="enterGroup('${g.group_id}', this)">
+        let html = '';
+        if (groupMultiSelectMode) {
+          html = '<div class="batch-bar"><span class="count" id="groupSelectCount">已选 0 个</span><button class="btn-cancel" onclick="toggleGroupMultiSelect()">取消</button><button class="btn-primary" style="background:var(--danger);border-color:var(--danger);font-size:12px;padding:4px 10px;" id="batchDeleteGroupsBtn" disabled onclick="batchDeleteGroups()">删除选中</button></div>';
+        }
+        html += groups.map(g => {
+          const isSystem = g.group_type === 'system';
+          const disabled = groupMultiSelectMode && isSystem;
+          return `
+          <div class="group-item${disabled ? ' disabled' : ''}" data-gid="${g.group_id}" ${groupMultiSelectMode ? '' : 'onclick="enterGroup(\'' + g.group_id + '\', this)"'}>
+            ${groupMultiSelectMode ? '<input type="checkbox" class="group-cb" value="' + g.group_id + '" onchange="updateGroupSelectCount()" ' + (disabled ? 'disabled' : '') + ' />' : ''}
             <div class="avatar avatar-group">📁</div>
             <div class="item-info">
               <div class="item-name">
                 ${escapeHtml(g.name)}
-                ${g.group_type === 'system' ? '<span class="system-badge">系统</span>' : ''}
+                ${isSystem ? '<span class="system-badge">系统</span>' : ''}
               </div>
               <div class="item-sub">
                 ${escapeHtml(g.category)} · ${g.member_count_except_self} 个成员 · ${g.chat_count} 个聊天室
               </div>
             </div>
-          </div>
-        `).join("");
-        if (groups.length === 0) {
-          list.innerHTML = '<div class="empty-state"><p>暂无群组，点击「新建」创建</p></div>';
-        }
+          </div>`;
+        }).join("");
+        list.innerHTML = html || '<div class="empty-state"><p>暂无群组，点击「新建」创建</p></div>';
       } catch (e) {
         console.error(e);
       }
@@ -892,7 +905,9 @@
 
     function backToGroups() {
       multiSelectMode = false;
+      groupMultiSelectMode = false;
       document.getElementById("multiSelectToggle").textContent = '☐ 多选';
+      document.getElementById("detailToolbar").style.display = "none";
       document.querySelectorAll('.group-item').forEach(i => i.classList.remove('active'));
       document.querySelectorAll('.member-item').forEach(i => i.classList.remove('active'));
       document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
@@ -901,8 +916,7 @@
       selectedMember = null;
       selectedChat = null;
       document.getElementById("sidebarTitle").textContent = "📁 我的群组";
-      document.getElementById("sidebarActions").innerHTML = `<button onclick="showCreateGroupModal()">+ 新建</button>`;
-      document.getElementById("detailToolbar").style.display = "none";
+      document.getElementById("sidebarActions").innerHTML = '<button onclick="showCreateGroupModal()">+ 新建</button><button id="groupMultiToggle" onclick="toggleGroupMultiSelect()" style="margin-left:4px;">☐ 多选</button>';
       document.getElementById("chatHeader").textContent = "👥 选择一个群组";
       document.getElementById("inputBar").style.display = "none";
       document.getElementById("msgContainer").innerHTML = `
@@ -916,6 +930,41 @@
         </div>
       `;
       loadGroups();
+    }
+
+    // ---------- Group Multi-Select (batch delete) ----------
+    function toggleGroupMultiSelect() {
+      groupMultiSelectMode = !groupMultiSelectMode;
+      document.getElementById("groupMultiToggle").textContent = groupMultiSelectMode ? '✅ 取消' : '☐ 多选';
+      if (viewState !== "groups") {
+        backToGroups();
+      } else {
+        loadGroups();
+      }
+    }
+
+    function updateGroupSelectCount() {
+      const checked = document.querySelectorAll(".group-cb:checked").length;
+      const countEl = document.getElementById("groupSelectCount");
+      if (countEl) countEl.textContent = '已选 ' + checked + ' 个';
+      const btn = document.getElementById("batchDeleteGroupsBtn");
+      if (btn) btn.disabled = checked === 0;
+    }
+
+    async function batchDeleteGroups() {
+      const checked = document.querySelectorAll(".group-cb:checked");
+      const ids = Array.from(checked).map(cb => cb.value);
+      if (ids.length === 0) return;
+      if (!confirm('确定要删除选中的 ' + ids.length + ' 个自定义群组吗？')) return;
+      try {
+        await api("/api/user-groups/batch-delete", {
+          method: "POST",
+          body: JSON.stringify({ group_ids: ids })
+        });
+        toggleGroupMultiSelect();
+      } catch (e) {
+        alert(e.message);
+      }
     }
 
     // ---------- Private Chat (1-on-1) ----------
@@ -969,7 +1018,7 @@
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
-            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(privateChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>')
+            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(privateChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((sessionStorage.getItem('name')||'').charAt(0)) + '</div>')
             + '<div class="bubble ' + cls + '" style="max-width:70%;cursor:context-menu;" data-msg-id="' + m.id + '" oncontextmenu="showMsgContextMenu(event,{id:' + m.id + ',type:\'private\',sender:\'' + m.sender + '\',timestamp:' + m.timestamp + '})">'
             + (!isMe ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(privateChatPeerName) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(privateChatPeerName) + '</div>' : '')
             + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
@@ -1023,7 +1072,7 @@
         const annMsg = msgs.slice().reverse().find(m => m.msg_type === 'system' && m.content && m.content.includes('📢'));
         const banner = document.getElementById("announcementBanner");
         const dismissedKey = 'dismissed_ann_' + currentChatRoom;
-        if (annMsg && localStorage.getItem(dismissedKey) !== annMsg.id.toString()) {
+        if (annMsg && sessionStorage.getItem(dismissedKey) !== annMsg.id.toString()) {
           document.getElementById("announcementBannerText").textContent = annMsg.content.replace(/^📢\s*/, '');
           banner.style.display = 'flex';
           banner.dataset.msgId = annMsg.id;
@@ -1044,7 +1093,7 @@
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
-            + (!isMe && m.sender !== 'system' ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml((m.sender_name||m.sender).charAt(0)) + '</div>' : (isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>' : ''))
+            + (!isMe && m.sender !== 'system' ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml((m.sender_name||m.sender).charAt(0)) + '</div>' : (isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((sessionStorage.getItem('name')||'').charAt(0)) + '</div>' : ''))
             + '<div class="bubble ' + cls + '" style="max-width:70%;cursor:context-menu;" data-msg-id="' + m.id + '" oncontextmenu="showMsgContextMenu(event,{id:' + m.id + ',type:\'group\',sender:\'' + m.sender + '\',timestamp:' + m.timestamp + ',userRole:\'' + currentUserRole + '\'})">'
             + (!isMe && m.sender !== 'system' ? '<div class="sender-name" data-uid="' + m.sender + '" data-name="' + escapeHtml(m.sender_name || m.sender) + '" style="cursor:pointer;" onclick="showMemberInfo(this)" oncontextmenu="event.preventDefault();showMemberInfo(this)">' + escapeHtml(m.sender_name || m.sender) + '</div>' : '')
             + (isMe && m.sender !== 'system' ? '<div class="sender-name" style="text-align:right;">' + escapeHtml(m.sender_name || '我') + '</div>' : '')
@@ -1422,7 +1471,7 @@
     function dismissAnnouncement() {
       if (currentChatRoom) {
         const banner = document.getElementById("announcementBanner");
-        localStorage.setItem('dismissed_ann_' + currentChatRoom, banner.dataset.msgId || '1');
+        sessionStorage.setItem('dismissed_ann_' + currentChatRoom, banner.dataset.msgId || '1');
         banner.style.display = 'none';
       }
     }
@@ -1633,7 +1682,7 @@
           const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN",
             { hour: "2-digit", minute: "2-digit" });
           return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
-            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(popupChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((localStorage.getItem('name')||'').charAt(0)) + '</div>')
+            + (!isMe ? '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-right:6px;flex-shrink:0;">' + escapeHtml(popupChatPeerName.charAt(0)) + '</div>' : '<div class="avatar" style="width:28px;height:28px;font-size:12px;margin-left:6px;flex-shrink:0;">' + escapeHtml((sessionStorage.getItem('name')||'').charAt(0)) + '</div>')
             + '<div class="bubble ' + cls + '" style="max-width:70%;">'
             + (!isMe ? '<div class="sender-name">' + escapeHtml(popupChatPeerName) + '</div>' : '')
             + '<div>' + content + '</div><div class="time">' + time + '</div></div></div>';
@@ -2369,7 +2418,7 @@ function stopCallTimer() {
 
 // ---------- Init ----------
     window.onload = function() {
-      if (!localStorage.getItem("token")) { location.href = "/"; return; }
+      if (!sessionStorage.getItem("token")) { location.href = "/"; return; }
       loadGroups();
       loadBlacklist();
       connectCallSSE();

@@ -208,11 +208,11 @@
     
     <script>
       // 获取用户信息
-      let token = localStorage.getItem("token");
-      let currentUid = localStorage.getItem("uid");
-      let currentRole = localStorage.getItem("role");
-      let currentName = localStorage.getItem("name");
-      let currentPhone = localStorage.getItem("phone") || "";
+      let token = sessionStorage.getItem("token");
+      let currentUid = sessionStorage.getItem("uid");
+      let currentRole = sessionStorage.getItem("role");
+      let currentName = sessionStorage.getItem("name");
+      let currentPhone = sessionStorage.getItem("phone") || "";
 
       // 页面加载时初始化数据
       document.addEventListener('DOMContentLoaded', function() {
@@ -257,7 +257,7 @@
         
 
         // 验证输入非空有效
-        let currentPhone = localStorage.getItem("phone") || "";
+        let currentPhone = sessionStorage.getItem("phone") || "";
         const desc = document.getElementById("descInput").value.trim();
         if (!(phone != currentPhone||phone ||( pwd&&confirmPwd) || desc !== currentDescription)) {
           document.getElementById("errorMsg").innerText = "修改内容为空";
@@ -324,7 +324,7 @@
           
           // 更新本地存储
           if (phone) {
-            localStorage.setItem("phone", phone);
+            sessionStorage.setItem("phone", phone);
             document.getElementById("phoneInput").value = phone;
 
           }

@@ -519,10 +519,10 @@
             document.getElementById("regError").innerText = data.error;
           } else {
             alert("注册成功！请登录");
-            localStorage.setItem("name", data.name);
-            localStorage.setItem("role", data.role);
-            localStorage.setItem("uid", uid);
-            localStorage.setItem("phone", phone);
+            sessionStorage.setItem("name", data.name);
+            sessionStorage.setItem("role", data.role);
+            sessionStorage.setItem("uid", uid);
+            sessionStorage.setItem("phone", phone);
 
 
             switchTab("login");
@@ -545,10 +545,10 @@
           if (!res.ok) {
             document.getElementById("loginError").innerText = data.error;
           } else {
-            localStorage.setItem("token", data.token);
-            localStorage.setItem("name", data.name);
-            localStorage.setItem("role", data.role);
-            localStorage.setItem("uid", uid);
+            sessionStorage.setItem("token", data.token);
+            sessionStorage.setItem("name", data.name);
+            sessionStorage.setItem("role", data.role);
+            sessionStorage.setItem("uid", uid);
             window.location.href = "/main";
           }
         } catch (e) {
