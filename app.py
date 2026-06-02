@@ -69,6 +69,10 @@ def init_db():
         c.execute('ALTER TABLE group_members ADD COLUMN call_notify INTEGER DEFAULT 0')
     except:
         pass
+    try:
+        c.execute('ALTER TABLE events ADD COLUMN creator_uid TEXT')
+    except:
+        pass
     c.execute('''CREATE TABLE IF NOT EXISTS call_preferences
                  (uid TEXT NOT NULL, target_uid TEXT NOT NULL,
                   call_notify INTEGER DEFAULT 0,
@@ -82,7 +86,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS events
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT,
                   start_time TEXT, end_time TEXT, location TEXT, target TEXT,
-                  organizer TEXT, description TEXT)''')
+                  organizer TEXT, description TEXT, creator_uid TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS tutor_duty
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_name TEXT, teacher_uid TEXT,
                   college TEXT, duty_date TEXT, start_time TEXT, end_time TEXT,
@@ -116,6 +120,26 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS lesson_stu
                  (lesson_id TEXT, stu_uid TEXT,
                   PRIMARY KEY(lesson_id, stu_uid))''')
+    # ===== 身份系统：班级/职位/课程职位 =====
+    c.execute('''CREATE TABLE IF NOT EXISTS classes
+                 (class_id TEXT PRIMARY KEY,
+                  class_name TEXT, grade TEXT, major TEXT, department TEXT,
+                  level TEXT DEFAULT 'class')''')
+    c.execute('''CREATE TABLE IF NOT EXISTS class_positions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  class_id TEXT NOT NULL, uid TEXT NOT NULL, position_name TEXT NOT NULL,
+                  FOREIGN KEY (class_id) REFERENCES classes(class_id),
+                  FOREIGN KEY (uid) REFERENCES users(uid))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS lesson_positions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  lesson_id TEXT NOT NULL, uid TEXT NOT NULL, position_name TEXT NOT NULL,
+                  FOREIGN KEY (lesson_id) REFERENCES lesson(lesson_id),
+                  FOREIGN KEY (uid) REFERENCES users(uid))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS class_stu
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  class_id TEXT NOT NULL, uid TEXT NOT NULL,
+                  FOREIGN KEY (class_id) REFERENCES classes(class_id),
+                  FOREIGN KEY (uid) REFERENCES users(uid))''')
     # 兼容旧数据库：添加 description 列（如果不存在）
     try:
         c.execute("ALTER TABLE users ADD COLUMN description TEXT DEFAULT ''")
@@ -127,11 +151,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS friend_requests
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   from_uid TEXT, to_uid TEXT, message TEXT,
-                  status TEXT DEFAULT 'pending', created_at REAL)''')
+                  status TEXT DEFAULT 'pending', created_at REAL,
+                  is_read INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_invites
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   chat_id TEXT, chat_name TEXT, from_uid TEXT, to_uid TEXT,
-                  status TEXT DEFAULT 'pending', created_at REAL)''')
+                  status TEXT DEFAULT 'pending', created_at REAL,
+                  is_read INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS notifications
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   type TEXT NOT NULL,
@@ -143,6 +169,21 @@ def init_db():
                   is_read INTEGER DEFAULT 0,
                   is_locked INTEGER DEFAULT 0,
                   created_at REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS events_groups
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  event_id INTEGER NOT NULL, group_name TEXT NOT NULL,
+                  leader_uid TEXT NOT NULL, status TEXT DEFAULT 'recruiting',
+                  max_members INTEGER DEFAULT 4, description TEXT,
+                  created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                  FOREIGN KEY (event_id) REFERENCES events(id),
+                  FOREIGN KEY (leader_uid) REFERENCES users(uid))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS events_groups_members
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  group_id INTEGER NOT NULL, member_uid TEXT NOT NULL,
+                  joined_at TEXT DEFAULT (datetime('now', 'localtime')),
+                  FOREIGN KEY (group_id) REFERENCES events_groups(id),
+                  FOREIGN KEY (member_uid) REFERENCES users(uid),
+                  UNIQUE(group_id, member_uid))''')
     # 数据迁移：notifications（存量数据导入）
     row = c.execute("SELECT COUNT(*) FROM notifications").fetchone()
     if row and row[0] == 0:
@@ -217,6 +258,194 @@ def _load_lessons_from_json(filepath, conn):
     except Exception as e:
         print(f"加载课程数据时出错: {e}")
 
+def _load_classes_from_json(filepath, conn):
+    """从 class.json 加载班级数据，写入 classes / class_positions / class_stu 表"""
+    try:
+        if not os.path.exists(filepath):
+            print(f"警告: 文件 {filepath} 不存在")
+            return
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        c = conn.cursor()
+        for cls in data:
+            class_id = cls.get('class_name', '')
+            grade = cls.get('grade', '')
+            major = cls.get('major', '')
+            department = cls.get('department', '')
+            level = 'grade' if '级' in class_id else 'class'
+            c.execute('INSERT OR IGNORE INTO classes VALUES (?,?,?,?,?,?)',
+                      (class_id, class_id, grade, major, department, level))
+            cadre = cls.get('class_cadre', {})
+            for position_name, uid in cadre.items():
+                c.execute('INSERT OR IGNORE INTO class_positions (class_id, uid, position_name) VALUES (?,?,?)',
+                          (class_id, uid, position_name))
+            for uid in cls.get('class_member', []):
+                c.execute('INSERT OR IGNORE INTO class_stu (class_id, uid) VALUES (?,?)',
+                          (class_id, uid))
+        conn.commit()
+        print(f"已从 {filepath} 导入班级数据")
+    except Exception as e:
+        print(f"加载班级数据时出错: {e}")
+
+def _load_events_from_json(filepath, conn):
+    """从 events.json 加载赛事数据，插入 events 表"""
+    try:
+        if not os.path.exists(filepath):
+            print(f"警告: 文件 {filepath} 不存在")
+            return
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        c = conn.cursor()
+        for ev in data:
+            c.execute('INSERT INTO events (id, name, type, start_time, end_time, location, target, organizer, description, creator_uid) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                      (None,
+                       ev.get('name', ''),
+                       ev.get('type', ''),
+                       ev.get('start_time', ''),
+                       ev.get('end_time', ''),
+                       ev.get('location', ''),
+                       ev.get('target', ''),
+                       ev.get('organizer', ''),
+                       ev.get('description', ''),
+                       ev.get('creator_uid', '')))
+        conn.commit()
+        print(f"已从 {filepath} 导入赛事数据")
+    except Exception as e:
+        print(f"加载赛事数据时出错: {e}")
+
+def _seed_event_groups(conn):
+    """为每个赛事创建 1-2 个示例小组，方便演示"""
+    c = conn.cursor()
+    events = c.execute('SELECT id, name FROM events').fetchall()
+    from datetime import datetime
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for ev in events:
+        eid = ev[0]
+        ename = ev[1]
+        if 'ROBOTAC' in ename:
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '空地协同组', '202421326577', 'recruiting', 4, '专注Sim2Real仿真策略，有ROS经验优先', now))
+            gid1 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid1, '202421326577', now))
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '硬件先锋队', '202421324917', 'recruiting', 4, '负责机器人硬件搭建与调试', now))
+            gid2 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid2, '202421324917', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid2, '202421326351', now))
+        elif '创新大赛' in ename:
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '智联校园团队', '202421324906', 'recruiting', 5, '基于IoT的智慧校园解决方案，招募后端开发', now))
+            gid3 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid3, '202421324906', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid3, '202421324921', now))
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, 'AI教育创新', '202421326580', 'recruiting', 5, 'AI赋能基础教育，需要擅长PPT和路演的同学', now))
+            gid4 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid4, '202421326580', now))
+        elif '三下乡' in ename:
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '筑梦支教队', '202421324916', 'recruiting', 6, '前往梅州开展暑期支教，招募授课志愿者', now))
+            gid5 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid5, '202421324916', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid5, '202421327193', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid5, '202421327006', now))
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '乡村振兴调研团', '202411310530', 'recruiting', 6, '赴清远调研乡村振兴成果，招募摄影和文案', now))
+            gid6 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid6, '202411310530', now))
+        elif '挑战杯' in ename:
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '社科调研组', '202421324925', 'recruiting', 4, '社会调查报告方向，招募问卷设计与数据分析', now))
+            gid7 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid7, '202421324925', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid7, '202421326643', now))
+            c.execute("INSERT INTO events_groups (event_id, group_name, leader_uid, status, max_members, description, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (eid, '科技发明小队', '202421326577', 'full', 4, '已完成组队（示例：已满员小组）', now))
+            gid8 = c.lastrowid
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid8, '202421326577', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid8, '202421324917', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid8, '202421326351', now))
+            c.execute("INSERT OR IGNORE INTO events_groups_members (group_id, member_uid, joined_at) VALUES (?,?,?)", (gid8, '202421327546', now))
+    conn.commit()
+    print(f"已创建赛事示例小组")
+
+def _create_event_chat_rooms(conn):
+    """初始化时创建所有赛事聊天室，将赛事发布者和参与小组的成员加入"""
+    c = conn.cursor()
+    events = c.execute('SELECT id, name, creator_uid FROM events').fetchall()
+    now = time.time()
+    count = 0
+    for ev in events:
+        eid = ev[0]
+        ename = ev[1]
+        creator_uid = ev[2]
+        chat_id = 'chat_event_' + str(eid)
+        c.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
+                  (chat_id, ename + '聊天室', 'system', now, 'system', '赛事'))
+        # 赛事发布者设为管理员
+        if creator_uid:
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, creator_uid, 'admin', now, 0))
+        # 查出该赛事所有小组的所有成员
+        members = c.execute('''SELECT DISTINCT egm.member_uid
+                               FROM events_groups_members egm
+                               JOIN events_groups eg ON egm.group_id = eg.id
+                               WHERE eg.event_id=?''', (eid,)).fetchall()
+        for m in members:
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, m[0], 'member', now, 0))
+        count += 1
+    conn.commit()
+    print(f"已创建 {count} 个赛事聊天室")
+
+def _create_course_chat_rooms(conn):
+    """初始化时创建所有课程聊天室，将该课程的所有学生和教师加入"""
+    c = conn.cursor()
+    lessons = c.execute('SELECT * FROM lesson').fetchall()
+    now = time.time()
+    for lesson in lessons:
+        lesson_id = lesson[0]
+        lesson_name = lesson[1]
+        teacher_uid = lesson[2]
+        chat_id = 'chat_' + lesson_id
+        # 创建课程聊天室
+        c.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
+                  (chat_id, lesson_name + '聊天室', 'system', now, 'system', '课程'))
+        # 加入该课程所有学生
+        stus = c.execute('SELECT stu_uid FROM lesson_stu WHERE lesson_id=?', (lesson_id,)).fetchall()
+        for stu in stus:
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, stu[0], 'member', now, 0))
+        # 将教师设为管理员
+        if teacher_uid:
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, teacher_uid, 'admin', now, 0))
+    conn.commit()
+    print(f"已创建 {len(lessons)} 个课程聊天室")
+
+def _create_class_chat_rooms(conn):
+    """创建班级/年级聊天室，将班级成员和班干部加入"""
+    c = conn.cursor()
+    classes = c.execute('SELECT * FROM classes').fetchall()
+    now = time.time()
+    for cls in classes:
+        class_id = cls[0]        # class_name 即为 class_id
+        level = cls[5]           # 'class' 或 'grade'
+        chat_id = 'chat_class_' + class_id
+        suffix = '年级群' if level == 'grade' else '聊天室'
+        c.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
+                  (chat_id, class_id + suffix, 'system', now, 'system', '班级'))
+        # 先加管理员（班干部），再加普通成员（避免 INSERT OR IGNORE 冲突）
+        for pos_row in c.execute('SELECT uid FROM class_positions WHERE class_id=? AND position_name IN (\'班长\',\'兼班\',\'兼助\',\'辅导员\')', (class_id,)).fetchall():
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, pos_row[0], 'admin', now, 0))
+        # 再加入所有班级成员
+        for stu in c.execute('SELECT uid FROM class_stu WHERE class_id=?', (class_id,)).fetchall():
+            c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+                      (chat_id, stu[0], 'member', now, 0))
+    conn.commit()
+    print(f"已创建 {len(classes)} 个班级/年级聊天室")
+
 def _seed_data(conn):
     c = conn.cursor()
     if c.execute('SELECT COUNT(*) FROM classrooms').fetchone()[0] == 0:
@@ -233,11 +462,9 @@ def _seed_data(conn):
             ('软件工程','赵老师','B202',3,'14:00','15:40')
         ])
     if c.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 0:
-        c.executemany('INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?)', [
-            (1,'秋季运动会','体育赛事','2026-05-10 08:00','2026-05-10 17:00','体育场','全体','体育部','一年一度校运会'),
-            (2,'校园十大歌手','文艺活动','2026-05-15 18:30','2026-05-15 21:00','大礼堂','学生','学生会','展示你的歌喉'),
-            (3,'人工智能讲座','学术讲座','2026-05-08 14:00','2026-05-08 16:00','报告厅A','全体','计算机学院','特邀教授讲座')
-        ])
+        _load_events_from_json('events.json', conn)
+        _seed_event_groups(conn)
+        _create_event_chat_rooms(conn)
     if c.execute('SELECT COUNT(*) FROM tutor_duty').fetchone()[0] == 0:
         c.executemany('INSERT INTO tutor_duty VALUES (?,?,?,?,?,?,?,?,?)', [
             (1,'李明','TE2023001','计算机学院','2026-05-01','08:00','12:00','教学楼A301','123456789'),
@@ -255,6 +482,10 @@ def _seed_data(conn):
             c.executemany('INSERT INTO users (uid,name,password,role,locked,unlock_time, login_fails,registed,phone) VALUES (?,?,?,?,?,?,?,?,?)', users_data)
     if c.execute('SELECT COUNT(*) FROM lesson').fetchone()[0] == 0:
         _load_lessons_from_json('lessons.json', conn)
+        _create_course_chat_rooms(conn)
+    if c.execute('SELECT COUNT(*) FROM classes').fetchone()[0] == 0:
+        _load_classes_from_json('class.json', conn)
+        _create_class_chat_rooms(conn)
     conn.commit()
 
 # ---------- 辅助函数 ----------
@@ -860,9 +1091,9 @@ def get_user_groups():
     # 获取用户所在的群组
     groups = conn.execute('''SELECT g.* FROM user_groups g
                              JOIN user_group_members gm ON g.group_id = gm.group_id
-                             WHERE gm.uid = ?
-                             ORDER BY g.created_at DESC''', (uid,)).fetchall()
-    
+                             WHERE gm.uid = ? AND (g.creator = ? OR g.creator = 'system')
+                             ORDER BY g.created_at DESC''', (uid, uid)).fetchall()
+
     result = []
     for grp in groups:
         # 获取群组的聊天室数量，系统群组需动态计算
@@ -878,6 +1109,11 @@ def get_user_groups():
                 ).fetchone()[0]
             else:
                 chat_count = 0
+            # 加上班级/年级聊天室数量
+            chat_count += conn.execute(
+                "SELECT COUNT(*) FROM user_group_chats ugc JOIN groups_chat gc ON ugc.chat_id=gc.group_id WHERE ugc.group_id=? AND gc.creator='system' AND gc.category='班级'",
+                (grp['group_id'],)
+            ).fetchone()[0]
         else:
             chat_count = conn.execute('SELECT COUNT(*) FROM user_group_chats WHERE group_id=?',
                                       (grp['group_id'],)).fetchone()[0]
@@ -1047,7 +1283,7 @@ def get_user_group_detail(group_id):
     # 处理"未分类"虚拟群组
     if group_id == 'sys_uncategorized_' + uid:
         all_group_chat_ids = set()
-        real_groups = conn.execute('SELECT g.group_id FROM user_groups g JOIN user_group_members gm ON g.group_id=gm.group_id WHERE gm.uid=?', (uid,)).fetchall()
+        real_groups = conn.execute('SELECT g.group_id FROM user_groups g JOIN user_group_members gm ON g.group_id=gm.group_id WHERE gm.uid=? AND (g.creator=? OR g.creator=\'system\')', (uid, uid)).fetchall()
         for rg in real_groups:
             cids = conn.execute('SELECT chat_id FROM user_group_chats WHERE group_id=?', (rg['group_id'],)).fetchall()
             all_group_chat_ids.update(r['chat_id'] for r in cids)
@@ -1778,14 +2014,6 @@ def remove_blacklist():
 def ensure_default_groups(uid):
     conn = get_db()
     try:
-        # 检查是否已有系统默认群组
-        existing = conn.execute('''SELECT COUNT(*) FROM user_groups g
-                                    JOIN user_group_members gm ON g.group_id = gm.group_id
-                                    WHERE gm.uid=? AND g.group_type='system' ''',
-                                (uid,)).fetchone()[0]
-        if existing >= 3:
-            return  # 已有所有系统默认群组
-
         now = time.time()
 
         # 检查并创建"即时聊天"群组
@@ -1818,39 +2046,73 @@ def ensure_default_groups(uid):
                                         WHERE gm.uid=? AND g.category='课程' AND g.group_type='system' ''',
                                     (uid,)).fetchone()
         if not course_group:
-            # 查找用户参与的课程（学生从lesson_stu，教师从lesson）
-            user = conn.execute('SELECT role FROM users WHERE uid=?', (uid,)).fetchone()
-            if user:
-                if user['role'] == 'student':
-                    courses = conn.execute('''SELECT l.* FROM lesson l
-                                               JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
-                                               WHERE ls.stu_uid=?''', (uid,)).fetchall()
-                elif user['role'] == 'teacher':
-                    courses = conn.execute('SELECT * FROM lesson WHERE teacher_uid=?',
-                                           (uid,)).fetchall()
-                else:
-                    courses = []
+            course_group_id = 'sys_courses_' + uid
+            conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
+                         (course_group_id, '课程和班级', 'system', now, 'system', '课程'))
+            conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                         (course_group_id, uid, now))
+        else:
+            course_group_id = course_group['group_id']
+        # 每次登录同步用户的课程/班级聊天室到"课程和班级"群组
+        user = conn.execute('SELECT role FROM users WHERE uid=?', (uid,)).fetchone()
+        if user:
+            if user['role'] == 'student':
+                courses = conn.execute('''SELECT l.* FROM lesson l
+                                           JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
+                                           WHERE ls.stu_uid=?''', (uid,)).fetchall()
+            elif user['role'] == 'teacher':
+                courses = conn.execute('SELECT * FROM lesson WHERE teacher_uid=?',
+                                       (uid,)).fetchall()
+            else:
+                courses = []
 
-                if courses:
-                    course_group_id = 'sys_courses_' + uid
-                    conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
-                                 (course_group_id, '课程', 'system', now, 'system', '课程'))
-                    conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
-                                 (course_group_id, uid, now))
+            for course in courses:
+                lesson_id = course['lesson_id']
+                chat_id = 'chat_' + lesson_id
+                chat_name = course['lesson_name']
+                conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                             (course_group_id, chat_id, chat_name))
 
-                    for course in courses:
-                        lesson_id = course['lesson_id']
-                        chat_id = 'chat_' + lesson_id
-                        chat_name = course['lesson_name']
-                        # 创建该课程的聊天室（共享，仅供该课程用户使用）
-                        conn.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
-                                     (chat_id, chat_name + '聊天室', 'system', now, 'custom', '课程'))
-                        # 将当前用户加入该聊天室
-                        conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
-                                     (chat_id, uid, 'member', now, 0))
-                        # 关联聊天室到课程群组
-                        conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
-                                     (course_group_id, chat_id, chat_name))
+            # 将用户所在的班级/年级聊天室也关联到"课程和班级"群组
+            class_ids = conn.execute('SELECT class_id FROM class_stu WHERE uid=?', (uid,)).fetchall()
+            for cr in class_ids:
+                cid = cr[0]
+                chat_id = 'chat_class_' + cid
+                cname = conn.execute('SELECT class_name FROM classes WHERE class_id=?', (cid,)).fetchone()
+                if cname:
+                    conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                                 (course_group_id, chat_id, cname[0]))
+
+        # 检查并创建"赛事"群组
+        event_group = conn.execute('''SELECT g.group_id FROM user_groups g
+                                       JOIN user_group_members gm ON g.group_id = gm.group_id
+                                       WHERE gm.uid=? AND g.category='赛事' AND g.group_type='system' ''',
+                                   (uid,)).fetchone()
+        if not event_group:
+            event_group_id = 'sys_events_' + uid
+            conn.execute('INSERT OR IGNORE INTO user_groups VALUES (?,?,?,?,?,?)',
+                         (event_group_id, '赛事', 'system', now, 'system', '赛事'))
+            conn.execute('INSERT OR IGNORE INTO user_group_members VALUES (?,?,?)',
+                         (event_group_id, uid, now))
+        else:
+            event_group_id = event_group['group_id']
+        # 每次登录同步用户的赛事聊天室到"赛事"群组
+        user = conn.execute('SELECT role FROM users WHERE uid=?', (uid,)).fetchone()
+        if user:
+            # 参与的赛事（通过 events_groups_members）
+            event_ids = conn.execute('''SELECT DISTINCT eg.event_id FROM events_groups eg
+                                         JOIN events_groups_members egm ON eg.id = egm.group_id
+                                         WHERE egm.member_uid=?''', (uid,)).fetchall()
+            # 负责的赛事（通过 events.creator_uid）
+            created_ids = conn.execute('SELECT id FROM events WHERE creator_uid=?',
+                                       (uid,)).fetchall()
+            all_ids = set(r[0] for r in event_ids) | set(r[0] for r in created_ids)
+            for eid in all_ids:
+                chat_id = 'chat_event_' + str(eid)
+                ename = conn.execute('SELECT name FROM events WHERE id=?', (eid,)).fetchone()
+                if ename:
+                    conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                                 (event_group_id, chat_id, ename['name']))
 
         conn.commit()
     finally:
@@ -2011,7 +2273,7 @@ def leave_group(group_id):
     chat = conn.execute('SELECT creator FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
     if chat and chat['creator'] == 'system':
         conn.close()
-        return jsonify({'error':'课程/班级群无法退出！'}),403
+        return jsonify({'error':'系统聊天室无法退出！'}),403
     if member['role'] == 'admin':
         count = conn.execute('SELECT COUNT(*) FROM group_members WHERE group_id=?',(group_id,)).fetchone()[0]
         if count > 1:
@@ -2038,24 +2300,87 @@ def chat_room_detail(group_id):
         return jsonify({'error':'无权访问'}),403
     chat = conn.execute('SELECT * FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
     if not chat: return jsonify({'error':'聊天室不存在'}),404
+    category = chat['category'] or ''
+    is_course = (chat['creator'] == 'system' and category == '课程')
+    is_event = (chat['creator'] == 'system' and category == '赛事')
+    is_class = (chat['creator'] == 'system' and category == '班级')
+    # 课程聊天室：提取 lesson_id，获取教师 uid
+    teacher_uid = None
+    lesson_id = None
+    if is_course and group_id.startswith('chat_'):
+        lesson_id = group_id[5:]
+        lesson = conn.execute('SELECT teacher_uid FROM lesson WHERE lesson_id=?', (lesson_id,)).fetchone()
+        if lesson:
+            teacher_uid = lesson['teacher_uid']
+    # 赛事聊天室：获取负责人 uid
+    event_creator_uid = None
+    if is_event and group_id.startswith('chat_event_'):
+        eid = group_id[11:]
+        ev = conn.execute('SELECT creator_uid FROM events WHERE id=?', (eid,)).fetchone()
+        if ev:
+            event_creator_uid = ev['creator_uid']
+    # 班级聊天室：提取 class_id
+    class_id_val = None
+    class_name = None
+    if is_class and group_id.startswith('chat_class_'):
+        class_id_val = group_id[11:]
+        cls = conn.execute('SELECT class_name FROM classes WHERE class_id=?', (class_id_val,)).fetchone()
+        if cls:
+            class_name = cls['class_name']
     members = conn.execute('''SELECT gm.uid, gm.role, gm.joined_at, gm.call_notify, u.name
                               FROM group_members gm JOIN users u ON gm.uid = u.uid
                               WHERE gm.group_id=? ORDER BY gm.joined_at''', (group_id,)).fetchall()
-    my_call_notify = None
+    # 为每个成员查询身份职位（按聊天室类型过滤）
+    member_list = []
     for m in members:
+        positions = []
+        if is_course:
+            # 课程聊天室：仅查课代表职位（教师角色由前端 roleLabel 显示）
+            lp_rows = conn.execute('''SELECT DISTINCT lp.position_name, l.lesson_name
+                                       FROM lesson_positions lp
+                                       JOIN lesson l ON lp.lesson_id = l.lesson_id
+                                       WHERE lp.uid=?''', (m['uid'],)).fetchall()
+            for r in lp_rows:
+                positions.append({'type':'lesson','label':r['lesson_name']+' '+r['position_name']})
+        elif is_class and class_id_val:
+            # 班级聊天室：仅查该班级的班干部职位
+            cp_rows = conn.execute('''SELECT position_name FROM class_positions
+                                       WHERE class_id=? AND uid=?''',
+                                    (class_id_val, m['uid'])).fetchall()
+            for r in cp_rows:
+                positions.append({'type':'class','label':r['position_name']})
+        # 普通/赛事聊天室：不查询任何职位
+        member_list.append({
+            'uid': m['uid'], 'name': m['name'], 'role': m['role'],
+            'call_notify': m['call_notify'] or 0, 'positions': positions
+        })
+    if is_course or is_event:
+        member_list.sort(key=lambda x: (0 if x['uid'] in (teacher_uid, event_creator_uid) else 1))
+    my_call_notify = None
+    for m in member_list:
         if m['uid'] == uid:
-            my_call_notify = m['call_notify'] or 0
+            my_call_notify = m['call_notify']
             break
     conn.close()
-    return jsonify({
+    result = {
         'group_id': chat['group_id'],
         'name': chat['name'],
         'creator': chat['creator'],
         'group_type': chat['group_type'],
+        'category': category,
         'call_notify': my_call_notify or 0,
         'is_system': chat['creator'] == 'system',
-        'members': [{'uid':m['uid'],'name':m['name'],'role':m['role'],'call_notify':m['call_notify'] or 0} for m in members]
-    })
+        'members': member_list
+    }
+    if is_course:
+        result['lesson_id'] = lesson_id
+        result['teacher_uid'] = teacher_uid
+    if is_event:
+        result['is_event'] = True
+    if is_class:
+        result['class_id'] = class_id_val
+        result['class_name'] = class_name
+    return jsonify(result)
 
 @app.route('/api/groups/<group_id>/invite', methods=['POST'])
 @token_required
@@ -2090,6 +2415,10 @@ def kick_from_chat(group_id):
     member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
     if not member or member['role'] not in ('admin',):
         return jsonify({'error':'仅群主可踢出成员'}),403
+    chat = conn.execute('SELECT creator FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    if chat and chat['creator'] == 'system':
+        conn.close()
+        return jsonify({'error':'系统聊天室不能踢出成员'}),403
     data = request.get_json()
     target_uid = data.get('uid', '')
     if target_uid == uid:
@@ -2120,6 +2449,10 @@ def dissolve_chat_room(group_id):
     member = conn.execute('SELECT role FROM group_members WHERE group_id=? AND uid=?', (group_id, uid)).fetchone()
     if not member or member['role'] not in ('admin',):
         return jsonify({'error':'仅群主可解散聊天室'}),403
+    chat = conn.execute('SELECT creator FROM groups_chat WHERE group_id=?', (group_id,)).fetchone()
+    if chat and chat['creator'] == 'system':
+        conn.close()
+        return jsonify({'error':'系统聊天室不能解散'}),403
     _dissolve_chat_room(conn, group_id, '聊天室已被解散')
     conn.close()
     return jsonify({'message':'聊天室已解散'})
@@ -2180,6 +2513,53 @@ def post_chat_announcement(group_id):
                  (group_id, 'system', f'📢 公告 - {user_name}: {content}', 'system', time.time()))
     conn.commit(); conn.close()
     return jsonify({'message':'公告已发布'})
+
+# ---------- 课代表管理 ----------
+@app.route('/api/lesson-positions/set', methods=['POST'])
+@token_required
+def set_lesson_position():
+    """设为课代表"""
+    uid = g.current_user['uid']
+    data = request.get_json()
+    lesson_id = data.get('lesson_id', '').strip()
+    target_uid = data.get('uid', '').strip()
+    if not lesson_id or not target_uid:
+        return jsonify({'error':'参数不全'}),400
+    conn = get_db()
+    # 仅该课程教师可设置课代表
+    lesson = conn.execute('SELECT * FROM lesson WHERE lesson_id=?', (lesson_id,)).fetchone()
+    if not lesson:
+        conn.close(); return jsonify({'error':'课程不存在'}),404
+    if lesson['teacher_uid'] != uid:
+        conn.close(); return jsonify({'error':'仅授课教师可设置课代表'}),403
+    # 检查目标用户是否在该课程的聊天室中
+    chat_id = 'chat_' + lesson_id
+    if not conn.execute('SELECT 1 FROM group_members WHERE group_id=? AND uid=?', (chat_id, target_uid)).fetchone():
+        conn.close(); return jsonify({'error':'该用户不在本课程聊天室中'}),404
+    conn.execute('INSERT OR IGNORE INTO lesson_positions (lesson_id, uid, position_name) VALUES (?,?,?)',
+                 (lesson_id, target_uid, '课代表'))
+    conn.commit(); conn.close()
+    return jsonify({'message':'已设为课代表'})
+
+@app.route('/api/lesson-positions/unset', methods=['POST'])
+@token_required
+def unset_lesson_position():
+    """取消课代表"""
+    uid = g.current_user['uid']
+    data = request.get_json()
+    lesson_id = data.get('lesson_id', '').strip()
+    target_uid = data.get('uid', '').strip()
+    if not lesson_id or not target_uid:
+        return jsonify({'error':'参数不全'}),400
+    conn = get_db()
+    lesson = conn.execute('SELECT * FROM lesson WHERE lesson_id=?', (lesson_id,)).fetchone()
+    if not lesson:
+        conn.close(); return jsonify({'error':'课程不存在'}),404
+    if lesson['teacher_uid'] != uid:
+        conn.close(); return jsonify({'error':'仅授课教师可取消课代表'}),403
+    conn.execute('DELETE FROM lesson_positions WHERE lesson_id=? AND uid=?', (lesson_id, target_uid))
+    conn.commit(); conn.close()
+    return jsonify({'message':'已取消课代表'})
 
 # ---------- 公告 ----------
 @app.route('/api/announcements', methods=['GET'])
@@ -2252,13 +2632,80 @@ def delete_announcement(id):
 @app.route('/api/search/users', methods=['GET'])
 @token_required
 def search_users():
-    q = request.args.get('q','').strip()
-    if not q: return jsonify([])
+    name_or_id = request.args.get('name_or_id', '').strip()
+    course = request.args.get('course', '').strip()
+    class_name = request.args.get('class', '').strip()
+    position = request.args.get('position', '').strip()
+    event_id = request.args.get('event_id', '').strip()
+    if not any([name_or_id, course, class_name, position, event_id]):
+        return jsonify([])
     conn = get_db()
-    users = conn.execute("SELECT uid,name,role FROM users WHERE uid LIKE ? OR name LIKE ? LIMIT 50",
-                         (f'%{q}%', f'%{q}%')).fetchall()
+    query = 'SELECT DISTINCT u.uid, u.name, u.role FROM users u WHERE 1=1'
+    params = []
+    if name_or_id:
+        query += ' AND (u.uid LIKE ? OR u.name LIKE ?)'
+        params.extend([f'%{name_or_id}%', f'%{name_or_id}%'])
+    if course:
+        query += ''' AND u.uid IN (SELECT stu_uid FROM lesson_stu ls
+                     JOIN lesson l ON ls.lesson_id=l.lesson_id
+                     WHERE l.lesson_name LIKE ?)'''
+        params.append(f'%{course}%')
+    if class_name:
+        query += ''' AND u.uid IN (SELECT uid FROM class_stu cs
+                     JOIN classes c ON cs.class_id=c.class_id
+                     WHERE c.class_name LIKE ?)'''
+        params.append(f'%{class_name}%')
+    if position:
+        query += ''' AND u.uid IN (SELECT uid FROM class_positions WHERE position_name LIKE ?
+                     UNION SELECT uid FROM lesson_positions WHERE position_name LIKE ?)'''
+        params.extend([f'%{position}%', f'%{position}%'])
+    if event_id:
+        query += ''' AND u.uid IN (SELECT member_uid FROM events_groups_members egm
+                     JOIN events_groups eg ON egm.group_id=eg.id WHERE eg.event_id=?)'''
+        params.append(event_id)
+    users = conn.execute(query, params).fetchall()
+    result = []
+    for u in users:
+        tags = []
+        cp_rows = conn.execute('''SELECT DISTINCT cp.position_name, c.class_name
+                                   FROM class_positions cp
+                                   JOIN class_stu cs ON cp.class_id=cs.class_id AND cp.uid=cs.uid
+                                   JOIN classes c ON cp.class_id=c.class_id
+                                   WHERE cs.uid=?''', (u['uid'],)).fetchall()
+        for r in cp_rows:
+            tags.append({'type':'class','label':f"{r['class_name']} {r['position_name']}"})
+        lp_rows = conn.execute('''SELECT DISTINCT lp.position_name, l.lesson_name
+                                   FROM lesson_positions lp
+                                   JOIN lesson l ON lp.lesson_id=l.lesson_id
+                                   WHERE lp.uid=?''', (u['uid'],)).fetchall()
+        for r in lp_rows:
+            tags.append({'type':'lesson','label':f"{r['lesson_name']} {r['position_name']}"})
+        ev_rows = conn.execute('''SELECT DISTINCT e.name
+                                   FROM events_groups_members egm
+                                   JOIN events_groups eg ON egm.group_id=eg.id
+                                   JOIN events e ON eg.event_id=e.id
+                                   WHERE egm.member_uid=?''', (u['uid'],)).fetchall()
+        for r in ev_rows:
+            tags.append({'type':'event','label':f"参赛-{r['name']}"})
+        result.append({'uid':u['uid'],'name':u['name'],'role':u['role'],'tags':tags})
     conn.close()
-    return jsonify([{'uid':u['uid'],'name':u['name'],'role':u['role']} for u in users])
+    return jsonify(result)
+
+@app.route('/api/search/options', methods=['GET'])
+@token_required
+def search_options():
+    type_ = request.args.get('type', '')
+    conn = get_db()
+    if type_ == 'courses':
+        rows = conn.execute('SELECT DISTINCT lesson_name FROM lesson ORDER BY lesson_name').fetchall()
+        conn.close()
+        return jsonify([r['lesson_name'] for r in rows])
+    elif type_ == 'classes':
+        rows = conn.execute('SELECT DISTINCT class_name FROM classes ORDER BY class_name').fetchall()
+        conn.close()
+        return jsonify([r['class_name'] for r in rows])
+    conn.close()
+    return jsonify([])
 
 @app.route('/api/classrooms/free', methods=['GET'])
 @token_required
@@ -2276,9 +2723,9 @@ def get_events():
     conn = get_db()
     events = conn.execute('SELECT * FROM events ORDER BY start_time ASC').fetchall()
     conn.close()
-    return jsonify([{'name':e['name'],'type':e['type'],'start_time':e['start_time'],
+    return jsonify([{'id':e['id'],'name':e['name'],'type':e['type'],'start_time':e['start_time'],
                      'end_time':e['end_time'],'location':e['location'],'target':e['target'],
-                     'organizer':e['organizer'],'description':e['description']} for e in events])
+                     'organizer':e['organizer'],'description':e['description'],'creator_uid':e['creator_uid']} for e in events])
 
 @app.route('/api/tutor_duty', methods=['GET'])
 @token_required
@@ -2383,7 +2830,7 @@ def call_check_online():
     data = request.get_json()
     target_uid = data.get('uid', '').strip()
     last_seen = user_heartbeats.get(target_uid, 0)
-    online = time.time() - last_seen < 15
+    online = time.time() - last_seen < 3600
     return jsonify({'online': online})
 
 @app.route('/api/call/invite', methods=['POST'])

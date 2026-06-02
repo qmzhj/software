@@ -1054,7 +1054,11 @@
         const d = await api('/api/groups/' + chatId + '/detail');
         const me = d.members.find(m => m.uid === currentUid);
         currentUserRole = me ? me.role : '';
-      } catch(e) { currentUserRole = ''; }
+      } catch(e) {
+        alert('聊天室已解散');
+        backToGroups();
+        return;
+      }
       loadBlacklist();
       loadGroupMessages();
       connectSSE('group', chatId, loadGroupMessages);
@@ -1420,39 +1424,103 @@
         chatDetailData = detail;
         document.getElementById("chatDetailName").textContent = detail.name;
         document.getElementById("chatDetailMeta").textContent = detail.members.length + " 位成员 · 创建者: " + (detail.members.find(m => m.role === 'admin')?.name || detail.creator);
-        
+
+        // Detect chat room type
+        const isCourse = detail.creator === 'system' && detail.category === '课程';
+        const isEvent = detail.creator === 'system' && detail.category === '赛事';
+        const isClass = detail.creator === 'system' && detail.category === '班级';
+
         // Show admin actions for admin/manager
         const myRole = detail.members.find(m => m.uid === currentUid)?.role;
         const isAdmin = myRole === 'admin' || myRole === 'manager';
         document.getElementById("chatDetailAdminActions").style.display = isAdmin ? 'inline' : 'none';
-        // Dissolve button only for admin (群主)
-        document.getElementById("dissolveChatBtn").style.display = myRole === 'admin' ? 'inline-block' : 'none';
+        // Dissolve button: 系统聊天室不允许解散
+        const canDissolve = myRole === 'admin' && !isCourse && !isEvent && !isClass;
+        document.getElementById("dissolveChatBtn").style.display = canDissolve ? 'inline-block' : 'none';
 
         const memberList = document.getElementById("chatDetailMembers");
-        memberList.innerHTML = detail.members.map(m => {
-          const isMe = m.uid === currentUid;
-          let roleLabel = '';
-          if (m.role === 'admin') roleLabel = ' 🔑群主';
-          else if (m.role === 'manager') roleLabel = ' 🛡️管理员';
-          var _uid = m.uid, _name = m.name, _role = m.role;
-                              const roleActions = (!isMe && myRole === 'admin') 
-            ? '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--danger);cursor:pointer;" onclick="kickFromChat(this)">踢出</span>'
-              + (m.role !== 'manager' 
-                ? '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--primary);cursor:pointer;" onclick="manageAdmin(this)">设为管理</span>'
-                : '<span style="font-size:11px;margin-left:4px;color:var(--text-muted);cursor:pointer;" onclick="manageAdmin(this,\'unset\')">取消管理</span>')
-            : '';
-          return '<div data-uid="' + _uid + '" data-name="' + _name + '" data-role="' + _role + '" style="display:flex;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showMemberInfo(this)">' +
-            '<div class="avatar avatar-user" style="width:32px;height:32px;font-size:13px;">' + escapeHtml(m.name.charAt(0)) + '</div>' +
-            '<div style="flex:1;margin-left:8px;">' +
-              '<span style="font-weight:500;font-size:13px;">' + escapeHtml(m.name) + roleLabel + '</span>' +
-              (isMe ? ' <span style="font-size:11px;color:var(--text-muted);">(我)</span>' : '') +
-              roleActions +
-            '</div>' +
-          '</div>';
-        }).join("");
+        // 班级聊天室：两栏式展示（班干部 + 班级成员）
+        if (isClass) {
+          const cadre = detail.members.filter(m => (m.positions || []).some(p => p.type === 'class'));
+          const regular = detail.members.filter(m => !(m.positions || []).some(p => p.type === 'class'));
+          let html = '';
+          if (cadre.length) {
+            html += '<div style="padding:6px 4px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);font-weight:600;">👥 班干部</div>';
+            html += renderMemberListItems(cadre, isCourse, isEvent, isClass, myRole);
+          }
+          if (regular.length) {
+            html += '<div style="padding:6px 4px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);font-weight:600;">👤 班级成员</div>';
+            html += renderMemberListItems(regular, isCourse, isEvent, isClass, myRole);
+          }
+          memberList.innerHTML = html;
+        } else {
+          memberList.innerHTML = renderMemberListItems(detail.members, isCourse, isEvent, isClass, myRole);
+        }
         // Call notify toggle
         renderChatCallNotifyToggle(detail);
         showModal("chatDetailModal");
+      } catch (e) { alert(e.message); }
+    }
+
+    // 渲染成员列表项（供平铺和两栏式复用）
+    function renderMemberListItems(members, _isCourse, _isEvent, _isClass, _myRole) {
+      return members.map(m => {
+        const isMe = m.uid === currentUid;
+        const posTags = (m.positions || []).map(p =>
+          '<span style="font-size:10px;background:#eef2ff;color:#4f46e5;padding:1px 6px;border-radius:8px;margin-left:4px;white-space:nowrap;">' + escapeHtml(p.label) + '</span>'
+        ).join('');
+        let roleLabel = '';
+        if (m.role === 'admin') {
+          if (_isCourse) roleLabel = ' 👑教师';
+          else if (_isEvent) roleLabel = ' 🏆负责人';
+          else roleLabel = ' 🔑群主';
+        } else if (m.role === 'manager') {
+          roleLabel = ' 🛡️管理员';
+        }
+        var _uid = m.uid, _name = m.name, _role = m.role;
+        let roleActions = '';
+        if (!isMe && _myRole === 'admin' && !_isClass) {
+          roleActions += '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--danger);cursor:pointer;" onclick="kickFromChat(this)">踢出</span>';
+          if (_isCourse) {
+            const isRep = (m.positions || []).some(p => p.type === 'lesson');
+            if (isRep) {
+              roleActions += '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--text-muted);cursor:pointer;" onclick="toggleLessonRep(this,\'unset\')">取消课代表</span>';
+            } else {
+              roleActions += '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--primary);cursor:pointer;" onclick="toggleLessonRep(this,\'set\')">设为课代表</span>';
+            }
+          } else {
+            if (m.role !== 'manager') {
+              roleActions += '<span data-uid="' + _uid + '" data-name="' + _name + '" style="font-size:11px;margin-left:4px;color:var(--primary);cursor:pointer;" onclick="manageAdmin(this)">设为管理</span>';
+            } else {
+              roleActions += '<span style="font-size:11px;margin-left:4px;color:var(--text-muted);cursor:pointer;" onclick="manageAdmin(this,\'unset\')">取消管理</span>';
+            }
+          }
+        }
+        return '<div data-uid="' + _uid + '" data-name="' + _name + '" data-role="' + _role + '" style="display:flex;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showMemberInfo(this)">' +
+          '<div class="avatar avatar-user" style="width:32px;height:32px;font-size:13px;">' + escapeHtml(m.name.charAt(0)) + '</div>' +
+          '<div style="flex:1;margin-left:8px;">' +
+            '<div>' +
+              '<span style="font-weight:500;font-size:13px;">' + escapeHtml(m.name) + roleLabel + '</span>' +
+              (isMe ? ' <span style="font-size:11px;color:var(--text-muted);">(我)</span>' : '') +
+              posTags +
+            '</div>' +
+            roleActions +
+          '</div>' +
+        '</div>';
+      }).join("");
+    }
+
+    // 课程聊天室：设置/取消课代表
+    async function toggleLessonRep(el, action) {
+      const data = chatDetailData;
+      if (!data || !data.lesson_id) { alert('无法获取课程信息'); return; }
+      const targetUid = el.dataset.uid;
+      try {
+        await api('/api/lesson-positions/' + (action === 'set' ? 'set' : 'unset'), {
+          method: 'POST',
+          body: JSON.stringify({ lesson_id: data.lesson_id, uid: targetUid })
+        });
+        showChatDetail(); // 刷新
       } catch (e) { alert(e.message); }
     }
 
@@ -2191,8 +2259,6 @@ function handleCallEvent(evt) {
     showModal('incomingCallModal');
   } else if (evt.type === 'call_accepted') {
     if (!callState) return;
-    closeModal('incomingCallModal');
-    showCallWindow(callState.peerName, callState.type, false);
     updateCallStatus('已连接');
     startCallTimer();
     if (callState.type === 'video') startLocalVideo();

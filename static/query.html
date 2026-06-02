@@ -114,11 +114,100 @@
         border-radius: 10px;
         cursor: pointer;
       }
+      .modal-overlay {
+        display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+        z-index: 1000; align-items: center; justify-content: center;
+      }
+      .modal-overlay.active { display: flex; }
+      .modal {
+        background: white; border-radius: 16px; padding: 24px;
+        width: 380px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
+      }
+      .modal h3 { margin-bottom: 16px; }
+      .modal .btn-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+      .modal .btn-row button {
+        padding: 8px 20px; border-radius: 10px; border: none;
+        font-size: 14px; cursor: pointer;
+      }
+      .modal .btn-primary { background: var(--primary); color: white; }
+      .modal .btn-cancel { background: #f1f5f9; color: #334155; }
+      .avatar-user { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+      .avatar {
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 50%; color: white; font-weight: 600;
+      }
     </style>
   </head>
   <body>
     <div class="nav" id="navBar"></div>
     <div class="content" id="queryContent"></div>
+
+    <!-- User Detail Modal -->
+    <div class="modal-overlay" id="memberInfoModal">
+      <div class="modal" style="width:380px;">
+        <h3>👤 用户信息</h3>
+        <div style="text-align:center;padding:16px 0;">
+          <div class="avatar avatar-user" id="memberInfoAvatar" style="width:64px;height:64px;font-size:28px;margin:0 auto 12px;"></div>
+          <p style="font-size:18px;font-weight:600;" id="memberInfoName"></p>
+          <p style="font-size:14px;color:#64748b;" id="memberInfoUid"></p>
+          <p style="font-size:14px;color:#64748b;" id="memberInfoRole"></p>
+          <p style="font-size:14px;color:#475569;margin-top:12px;padding:8px 16px;background:#f1f5f9;border-radius:8px;" id="memberInfoDesc">暂无简介</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="memberInfoChatBtn" onclick="memberInfoStartChat()">💬 发消息</button>
+          <button class="btn-cancel" id="memberInfoFriendBtn" style="display:none;" onclick="memberInfoToggleFriend()"></button>
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn-cancel" style="width:100%;" onclick="closeModal('memberInfoModal')">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Detail Modal -->
+    <div class="modal-overlay" id="eventDetailModal">
+      <div class="modal" style="width:520px;">
+        <h3 id="eventDetailName">🎉 赛事详情</h3>
+        <div id="eventDetailBody" style="font-size:14px;line-height:1.7;">
+          <div class="info">🕒 <span id="evTime"></span></div>
+          <div class="info">📍 <span id="evLocation"></span></div>
+          <div class="info">👥 <span id="evTarget"></span></div>
+          <div class="info">🏢 <span id="evOrganizer"></span></div>
+          <p style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;" id="evDesc"></p>
+        </div>
+        <div class="btn-row" style="margin-top:16px;">
+          <button class="btn-cancel" style="width:100%;" onclick="closeModal('eventDetailModal')">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Friend Request Modal -->
+    <div class="modal-overlay" id="friendRequestModal">
+      <div class="modal" style="width:360px;">
+        <h3>🤍 加好友</h3>
+        <p style="font-size:14px;color:#64748b;margin-bottom:12px;">发送好友申请给 <strong id="friendReqTargetName"></strong></p>
+        <textarea id="friendReqMessage" placeholder="添加好友备注..." style="width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;min-height:80px;resize:vertical;font-family:inherit;"></textarea>
+        <div class="btn-row" style="justify-content:flex-end;">
+          <button class="btn-cancel" onclick="closeModal('friendRequestModal')">取消</button>
+          <button class="btn-primary" onclick="sendFriendRequest()">发送申请</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Popup Chat Modal -->
+    <div class="modal-overlay" id="popupChatModal">
+      <div class="modal" style="width:480px;height:500px;display:flex;flex-direction:column;padding:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e2e8f0;flex-shrink:0;">
+          <span style="font-weight:600;font-size:16px;" id="popupChatTitle">💬 私聊</span>
+          <button class="btn-cancel" style="padding:4px 12px;font-size:13px;" onclick="closePopupChat()">✕ 返回</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:12px 16px;" id="popupChatMessages"></div>
+        <div style="display:flex;padding:12px 16px;border-top:1px solid #e2e8f0;gap:8px;flex-shrink:0;">
+          <input id="popupChatInput" style="flex:1;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;outline:none;" placeholder="输入消息..." onkeypress="if(event.key==='Enter') sendPopupChatMsg()" />
+          <button class="btn-primary" style="padding:10px 20px;border-radius:8px;" onclick="sendPopupChatMsg()">发送</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       let token = sessionStorage.getItem("token");
       async function api(url, opt = {}) {
@@ -131,11 +220,64 @@
         if (!res.ok) throw new Error(data.error);
         return data;
       }
+      // Autocomplete: input+dropdown for filter controls
+      let eventsData = [];
+      function acHtml(id, placeholder, width) {
+        return '<div class="ac-wrap" style="position:relative;display:inline-block;vertical-align:top;">' +
+          '<input id="' + id + '" placeholder="' + placeholder + '" style="width:' + width +
+          ';padding:8px 22px 8px 10px;border-radius:10px;border:1px solid #e2e8f0;outline:none;font-size:13px;background:#fff;"' +
+          ' autocomplete="off" oninput="acFilter(\'' + id + '\')" onfocus="acFilter(\'' + id + '\')" onkeydown="acKey(\'' + id + '\',event)">' +
+          '<span onclick="acToggle(\'' + id + '\')" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:10px;color:#94a3b8;line-height:1;padding:2px;">▼</span>' +
+          '<div id="ac_' + id + '" class="ac-dropdown" style="display:none;position:absolute;top:100%;left:0;z-index:999;background:#fff;' +
+          'border:1px solid #e2e8f0;border-radius:8px;max-height:200px;overflow-y:auto;min-width:100%;' +
+          'box-shadow:0 4px 12px rgba(0,0,0,0.1);font-size:13px;"></div></div>';
+      }
+      const acData = {};
+      function acInit(id, options) { acData[id] = options.slice(); }
+      function acToggle(id) {
+        const el = document.getElementById('ac_' + id);
+        if (!el || !acData[id] || !acData[id].length) return;
+        if (el.style.display === 'none') acShow(id, document.getElementById(id).value);
+        else el.style.display = 'none';
+      }
+      function acShow(id, filter) {
+        const el = document.getElementById('ac_' + id);
+        if (!el || !acData[id] || !acData[id].length) return;
+        const items = filter ? acData[id].filter(o => o.indexOf(filter) !== -1) : acData[id];
+        if (!items.length) { el.style.display = 'none'; return; }
+        el.innerHTML = items.map((o) => {
+          const idx = acData[id].indexOf(o);
+          return '<div class="ac-item" style="padding:6px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;" ' +
+            'onclick="acPick(\'' + id + '\',' + idx + ')" onmouseenter="this.style.background=\'#eef2ff\'" onmouseleave="this.style.background=\'\'">' +
+            escapeHtml(o) + '</div>';
+        }).join('');
+        el.style.display = 'block';
+      }
+      function acPick(id, idx) {
+        const val = acData[id][idx];
+        document.getElementById(id).value = val;
+        document.getElementById('ac_' + id).style.display = 'none';
+      }
+      function acFilter(id) { acShow(id, document.getElementById(id).value); }
+      function acKey(id, e) { if (e.key === 'Escape') { document.getElementById('ac_' + id).style.display = 'none'; } }
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.ac-wrap')) {
+          document.querySelectorAll('.ac-dropdown').forEach(el => el.style.display = 'none');
+        }
+      });
+      function initAcPositions() {
+        acInit('searchPosition', ['班长','团支书','学习委员','副级长','年级团总支','辅导员','课代表','兼班','兼助']);
+      }
       const queries = [
         {
           key: "userSearch",
           label: "🔎 用户搜索",
-          form: '<input id="kw" placeholder="学号/姓名"><button class="btn" onclick="searchUsers()">搜索</button>',
+          form: '<input id="searchName" placeholder="学号/姓名" style="width:140px;">' +
+                acHtml('searchCourse', '课程', '110px') +
+                acHtml('searchClass', '班级', '110px') +
+                acHtml('searchPosition', '身份', '110px') +
+                acHtml('searchEvent', '赛事', '120px') +
+                '<button class="btn" onclick="searchUsers()">🔍 搜索</button>',
         },
         /*{
           key: "freeRoom",
@@ -174,6 +316,18 @@
           `<div class="query-form">${q.form}</div><div id="res"></div>`;
         if (key === "events") loadEvents();
         if (key === "course") loadCourses();
+        if (key === "userSearch") { loadSearchOptions(); initAcPositions(); }
+      }
+      async function loadSearchOptions() {
+        try {
+          const courses = await api('/api/search/options?type=courses');
+          const classes = await api('/api/search/options?type=classes');
+          const events = await api('/api/events');
+          eventsData = events;
+          acInit('searchCourse', courses);
+          acInit('searchClass', classes);
+          acInit('searchEvent', events.map(e => e.name));
+        } catch(e) {}
       }
       function renderTimeline(items, mapper) {
         const container = document.getElementById("res");
@@ -182,15 +336,44 @@
           : '<div style="text-align:center;color:#64748b;padding:40px;">暂无数据</div>';
       }
       async function searchUsers() {
-        const kw = document.getElementById("kw").value.trim();
-        if (!kw) return;
-        const users = await api(`/api/search/users?q=${kw}`);
+        const params = new URLSearchParams();
+        const nameVal = document.getElementById("searchName").value.trim();
+        const courseVal = document.getElementById("searchCourse").value;
+        const classVal = document.getElementById("searchClass").value;
+        const posVal = document.getElementById("searchPosition").value;
+        const eventVal = document.getElementById("searchEvent").value;
+        if (nameVal) params.set("name_or_id", nameVal);
+        if (courseVal) params.set("course", courseVal);
+        if (classVal) params.set("class", classVal);
+        if (posVal) params.set("position", posVal);
+        if (eventVal) { const ev = eventsData.find(e => e.name === eventVal); if (ev) params.set("event_id", ev.id); }
+        if (!params.toString()) { document.getElementById("res").innerHTML = '<div style="text-align:center;color:#64748b;padding:40px;">请至少填写一个筛选条件</div>'; return; }
+        const users = await api("/api/search/users?" + params.toString());
+        // 判断哪些标签类型需要展示
+        const showTags = [];
+        if (courseVal) showTags.push("lesson");
+        if (classVal) showTags.push("class");
+        if (posVal) showTags.push("class","lesson");
+        if (eventVal) showTags.push("event");
         renderTimeline(
           users,
-          (u) =>
-            `<h4>${u.name} (${u.uid})</h4><div class="info">角色：${u.role === "student" ? "学生" : "教师"}</div>`,
+          (u) => {
+            let html = '<div style="cursor:pointer;" onclick="showMemberInfo(this)" data-uid="' + u.uid + '" data-name="' + escapeHtml(u.name) + '" data-role="' + u.role + '">';
+            html += `<h4>${u.name} (${u.uid})</h4><div class="info">角色：${u.role === "student" ? "学生" : u.role === "teacher" ? "教师" : "管理员"}</div>`;
+            if (showTags.length && u.tags && u.tags.length) {
+              const filtered = u.tags.filter(t => showTags.includes(t.type));
+              if (filtered.length) {
+                html += '<div style="margin-top:6px;">' + filtered.map(t =>
+                  '<span style="display:inline-block;background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:10px;font-size:12px;margin:2px 4px 2px 0;">' + escapeHtml(t.label) + '</span>'
+                ).join("") + '</div>';
+              }
+            }
+            html += '</div>';
+            return html;
+          },
         );
       }
+      function escapeHtml(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
       async function freeRooms() {
         const date = document.getElementById("rdate").value,
           start = document.getElementById("rstart").value,
@@ -209,8 +392,23 @@
         renderTimeline(
           events,
           (e) =>
-            `<h4>${e.name} (${e.type})</h4><div class="info">🕒 ${e.start_time} ~ ${e.end_time}</div><div class="info">📍 ${e.location} · 👥 ${e.target}</div><div>${e.description}</div>`,
+            '<div style="cursor:pointer;" onclick="showEventDetail(' + e.id + ')" data-eid="' + e.id + '">' +
+            `<h4>${e.name} (${e.type})</h4><div class="info">🕒 ${e.start_time} ~ ${e.end_time}</div><div class="info">📍 ${e.location} · 👥 ${e.target}</div><div>${e.description}</div></div>`,
         );
+      }
+      async function showEventDetail(eid) {
+        try {
+          const events = await api("/api/events");
+          const ev = events.find(e => e.id === eid);
+          if (!ev) return;
+          document.getElementById("eventDetailName").textContent = '🎉 ' + ev.name;
+          document.getElementById("evTime").textContent = ev.start_time + ' ~ ' + ev.end_time;
+          document.getElementById("evLocation").textContent = ev.location;
+          document.getElementById("evTarget").textContent = ev.target;
+          document.getElementById("evOrganizer").textContent = ev.organizer;
+          document.getElementById("evDesc").textContent = ev.description;
+          showModal("eventDetailModal");
+        } catch(e) {}
       }
       async function tutorDuty() {
         const date = document.getElementById("tdate").value,
@@ -255,6 +453,121 @@
           .join("");
         switchQuery("userSearch");
       };
+      // ---------- User Detail Modal ----------
+      let memberInfoTarget = null;
+      function showModal(id) { document.getElementById(id).classList.add('active'); }
+      function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+      async function showMemberInfo(el) {
+        const uid = el.dataset.uid;
+        const name = el.dataset.name || '';
+        const role = el.dataset.role || '';
+        memberInfoTarget = { uid, name, role };
+        document.getElementById("memberInfoAvatar").textContent = name.charAt(0);
+        document.getElementById("memberInfoName").textContent = name;
+        document.getElementById("memberInfoUid").textContent = uid;
+        const roleMap = { 'student': '学生', 'teacher': '教师', 'manager': '管理员' };
+        document.getElementById("memberInfoRole").textContent = roleMap[role] || role || '';
+        try {
+          const userData = await api("/api/user/" + uid);
+          document.getElementById("memberInfoDesc").textContent = userData.description || '暂无简介';
+        } catch(e) { document.getElementById("memberInfoDesc").textContent = '暂无简介'; }
+        updateFriendBtn();
+        showModal("memberInfoModal");
+      }
+      async function memberInfoStartChat() {
+        if (!memberInfoTarget) return;
+        openPopupChat(memberInfoTarget.uid, memberInfoTarget.name);
+      }
+      // ---------- Popup Private Chat ----------
+      let popupChatPeer = null, popupChatPeerName = "", popupPolling = null, myUid = sessionStorage.getItem('uid') || '';
+      async function openPopupChat(uid, name) {
+        popupChatPeer = uid; popupChatPeerName = name;
+        document.getElementById("popupChatTitle").textContent = '💬 ' + name;
+        document.getElementById("popupChatInput").value = "";
+        document.getElementById("popupChatMessages").innerHTML = '<div class="empty-state" style="text-align:center;color:#64748b;padding:40px;"><p>加载中...</p></div>';
+        closeModal("memberInfoModal");
+        showModal("popupChatModal");
+        loadPopupChatMessages();
+        if (popupPolling) clearInterval(popupPolling);
+        popupPolling = setInterval(loadPopupChatMessages, 2000);
+      }
+      function closePopupChat() {
+        if (popupPolling) { clearInterval(popupPolling); popupPolling = null; }
+        popupChatPeer = null; popupChatPeerName = "";
+        closeModal("popupChatModal");
+      }
+      async function loadPopupChatMessages() {
+        if (!popupChatPeer) return;
+        try {
+          const msgs = await api("/api/messages?with=" + popupChatPeer);
+          const container = document.getElementById("popupChatMessages");
+          const myName = sessionStorage.getItem('name') || '';
+          container.innerHTML = msgs.map(m => {
+            if (m.msg_type === 'system') return '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:8px;">' + escapeHtml(m.content) + '</div>';
+            if (m.revoked) return '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:8px;">' + escapeHtml(m.content) + '</div>';
+            const isMe = m.sender === myUid;
+            const cls = isMe ? "sent" : "received";
+            const content = m.msg_type === 'text' ? escapeHtml(m.content) : '<em style="color:#94a3b8;">[' + (m.msg_type||'') + ']</em>';
+            const time = new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN", { hour:"2-digit", minute:"2-digit" });
+            const avatarChar = isMe ? (myName.charAt(0)||'?') : popupChatPeerName.charAt(0);
+            return '<div style="display:flex;align-items:flex-end;margin:4px 0;' + (isMe ? 'flex-direction:row-reverse;' : '') + '">'
+              + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;' + (isMe ? 'margin-left:6px;' : 'margin-right:6px;') + '">' + escapeHtml(avatarChar) + '</div>'
+              + '<div class="bubble ' + cls + '" style="max-width:70%;padding:8px 12px;border-radius:12px;font-size:14px;' + (isMe ? 'background:#4f46e5;color:white;' : 'background:#f1f5f9;color:#334155;') + '">'
+              + '<div>' + content + '</div><div style="font-size:11px;margin-top:4px;opacity:0.7;">' + time + '</div></div></div>';
+          }).join('');
+          if (msgs.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="text-align:center;color:#64748b;padding:40px;"><p>开始和 ' + escapeHtml(popupChatPeerName) + ' 聊天吧</p></div>';
+          }
+          container.scrollTop = container.scrollHeight;
+        } catch(e) {
+          document.getElementById("popupChatMessages").innerHTML = '<div class="empty-state" style="text-align:center;color:#64748b;padding:40px;"><p>⚠️ ' + escapeHtml(e.message) + '</p></div>';
+        }
+      }
+      async function sendPopupChatMsg() {
+        const input = document.getElementById("popupChatInput");
+        const text = input.value.trim();
+        if (!text || !popupChatPeer) return;
+        try {
+          await api("/api/send", { method: "POST", body: JSON.stringify({ receiver: popupChatPeer, content: text }) });
+          input.value = "";
+          loadPopupChatMessages();
+        } catch(e) { alert(e.message); }
+      }
+      let friendReqTargetUid = null;
+      function openFriendReqModal(uid, name) {
+        friendReqTargetUid = uid;
+        document.getElementById("friendReqTargetName").textContent = name;
+        document.getElementById("friendReqMessage").value = "";
+        closeModal("memberInfoModal");
+        showModal("friendRequestModal");
+      }
+      async function sendFriendRequest() {
+        if (!friendReqTargetUid) return;
+        const msg = document.getElementById("friendReqMessage").value.trim() || '你好，我想加你为好友';
+        await api('/api/friend-request', { method: 'POST', body: JSON.stringify({ uid: friendReqTargetUid, message: msg }) });
+        alert('好友申请已发送');
+        closeModal('friendRequestModal');
+        showModal('memberInfoModal');
+      }
+      async function updateFriendBtn() {
+        if (!memberInfoTarget) return;
+        const btn = document.getElementById("memberInfoFriendBtn");
+        try {
+          const friends = await api('/api/friends');
+          if (friends.some(f => f.uid === memberInfoTarget.uid)) {
+            btn.textContent = '👥 好友'; btn.style.display = 'inline-block';
+            btn.onclick = async function() {
+              if (confirm('确定移除好友 ' + memberInfoTarget.name + ' 吗？')) {
+                await api('/api/friends/remove', { method: 'POST', body: JSON.stringify({ uid: memberInfoTarget.uid }) });
+                updateFriendBtn();
+              }
+            };
+          } else {
+            btn.textContent = '🤍 加好友'; btn.style.display = 'inline-block';
+            btn.onclick = function() { openFriendReqModal(memberInfoTarget.uid, memberInfoTarget.name); };
+          }
+        } catch(e) { btn.style.display = 'none'; }
+      }
     </script>
   </body>
 </html>
