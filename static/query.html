@@ -152,6 +152,7 @@
           <p style="font-size:14px;color:#64748b;" id="memberInfoUid"></p>
           <p style="font-size:14px;color:#64748b;" id="memberInfoRole"></p>
           <p style="font-size:14px;color:#475569;margin-top:12px;padding:8px 16px;background:#f1f5f9;border-radius:8px;" id="memberInfoDesc">暂无简介</p>
+          <div id="memberInfoTags" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;"></div>
         </div>
         <div class="btn-row">
           <button class="btn-primary" id="memberInfoChatBtn" onclick="memberInfoStartChat()">💬 发消息</button>
@@ -208,6 +209,7 @@
       </div>
     </div>
 
+    <script src="member_info.js"></script>
     <script>
       let token = sessionStorage.getItem("token");
       async function api(url, opt = {}) {
@@ -454,26 +456,8 @@
         switchQuery("userSearch");
       };
       // ---------- User Detail Modal ----------
-      let memberInfoTarget = null;
       function showModal(id) { document.getElementById(id).classList.add('active'); }
       function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-      async function showMemberInfo(el) {
-        const uid = el.dataset.uid;
-        const name = el.dataset.name || '';
-        const role = el.dataset.role || '';
-        memberInfoTarget = { uid, name, role };
-        document.getElementById("memberInfoAvatar").textContent = name.charAt(0);
-        document.getElementById("memberInfoName").textContent = name;
-        document.getElementById("memberInfoUid").textContent = uid;
-        const roleMap = { 'student': '学生', 'teacher': '教师', 'manager': '管理员' };
-        document.getElementById("memberInfoRole").textContent = roleMap[role] || role || '';
-        try {
-          const userData = await api("/api/user/" + uid);
-          document.getElementById("memberInfoDesc").textContent = userData.description || '暂无简介';
-        } catch(e) { document.getElementById("memberInfoDesc").textContent = '暂无简介'; }
-        updateFriendBtn();
-        showModal("memberInfoModal");
-      }
       async function memberInfoStartChat() {
         if (!memberInfoTarget) return;
         openPopupChat(memberInfoTarget.uid, memberInfoTarget.name);

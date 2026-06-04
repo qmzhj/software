@@ -372,7 +372,7 @@
       <div class="detail-section-title" style="display:flex;justify-content:space-between;">
         <span>👥 成员</span>
         <span>
-          <button class="btn-cancel" style="font-size:12px;padding:1px 8px;" onclick="showInviteToChat()">+ 邀请</button>
+          <button class="btn-cancel" id="chatDetailInviteBtn" style="font-size:12px;padding:1px 8px;" onclick="showInviteToChat()">+ 邀请</button>
         </span>
       </div>
       <div id="chatDetailMembers" style="margin-bottom:12px;max-height:250px;overflow-y:auto;"></div>
@@ -385,7 +385,7 @@
 
       <div class="btn-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;justify-content:space-between;">
         <div>
-          <button class="btn-cancel" style="color:var(--danger);border:1px solid var(--danger);" onclick="leaveChatRoom()">退出聊天室</button>
+          <button class="btn-cancel" id="chatDetailLeaveBtn" style="color:var(--danger);border:1px solid var(--danger);" onclick="leaveChatRoom()">退出聊天室</button>
           <button class="btn-cancel" id="dissolveChatBtn" style="color:var(--danger);border:1px solid var(--danger);margin-left:6px;display:none;" onclick="dissolveChatRoom()">解散聊天室</button>
         </div>
         <button class="btn-cancel" onclick="closeModal('chatDetailModal')">关闭</button>
@@ -397,6 +397,7 @@
   <div class="modal-overlay" id="inviteChatModal">
     <div class="modal">
       <h3>👤 邀请成员</h3>
+      <input id="inviteChatSearch" placeholder="搜索学号/姓名..." oninput="filterInviteMemberList()" style="width:100%;margin-bottom:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;" />
       <div class="member-list-add" id="inviteChatMemberList"></div>
       <div class="btn-row">
         <button class="btn-cancel" onclick="closeModal('inviteChatModal')">取消</button>
@@ -439,6 +440,7 @@
         <p style="font-size:14px;color:var(--text-muted);" id="memberInfoUid"></p>
         <p style="font-size:14px;color:var(--text-muted);" id="memberInfoRole"></p>
         <p style="font-size:14px;color:#475569;margin-top:12px;padding:8px 16px;background:#f1f5f9;border-radius:8px;" id="memberInfoDesc">暂无简介</p>
+        <div id="memberInfoTags" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;"></div>
       </div>
       <!-- Private chat call notify toggle -->
       <div id="privateCallSetting" style="display:none;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:8px;border-top:1px solid var(--border);padding-top:8px;">
@@ -597,6 +599,7 @@
     </div>
   </div>
 
+  <script src="member_info.js"></script>
   <script>
     const token = sessionStorage.getItem("token");
     const currentUid = sessionStorage.getItem("uid");
@@ -884,7 +887,7 @@
       document.getElementById("sidebarTitle").textContent = "📁 " + detail.name;
       document.getElementById("sidebarActions").innerHTML =
         `<button class="back-btn" onclick="backToGroups()">← 返回</button>`;
-      document.getElementById("detailToolbar").style.display = "flex";
+      document.getElementById("detailToolbar").style.display = detail.group_type === 'system' ? "none" : "flex";
 
       // Show group info in right panel
       const container = document.getElementById("msgContainer");
@@ -1003,9 +1006,7 @@
       container.innerHTML = '<div class="empty-state"><p>加载中...</p></div>';
       try {
         const msgs = await api("/api/messages?with=" + privateChatPeer);
-        const blockedUids = blacklistCache.map(b => b.uid).filter(uid => uid !== currentUid);
-        const filtered = msgs.filter(m => !blockedUids.includes(m.sender) && !blockedUids.includes(m.receiver));
-        container.innerHTML = filtered.map(m => {
+        container.innerHTML = msgs.map(m => {
           if (m.msg_type === 'system') {
             return renderSystemMessage(m.content);
           }
@@ -1182,7 +1183,7 @@
         }).then(() => {
           input.value = "";
           loadGroupMessages();
-        }).catch(e => console.error(e));
+        }).catch(e => alert(e.message));
       } else if (privateChatPeer) {
         // Send private message
         api("/api/send", {
@@ -1191,7 +1192,7 @@
         }).then(() => {
           input.value = "";
           loadPrivateMessages();
-        }).catch(e => console.error(e));
+        }).catch(e => alert(e.message));
       }
     }
 
@@ -1434,6 +1435,10 @@
         const myRole = detail.members.find(m => m.uid === currentUid)?.role;
         const isAdmin = myRole === 'admin' || myRole === 'manager';
         document.getElementById("chatDetailAdminActions").style.display = isAdmin ? 'inline' : 'none';
+        // 系统聊天室限制
+        const isSystemChat = detail.creator === 'system';
+        document.getElementById("chatDetailInviteBtn").style.display = isSystemChat ? 'none' : 'inline-block';
+        document.getElementById("chatDetailLeaveBtn").style.display = isSystemChat ? 'none' : 'inline-block';
         // Dissolve button: 系统聊天室不允许解散
         const canDissolve = myRole === 'admin' && !isCourse && !isEvent && !isClass;
         document.getElementById("dissolveChatBtn").style.display = canDissolve ? 'inline-block' : 'none';
@@ -1562,15 +1567,28 @@
       if (!currentChatRoom) return;
       await loadAllUsers();
       const currentMemberUids = chatDetailData ? chatDetailData.members.map(m => m.uid) : [];
-      const available = allUsers.filter(u => !currentMemberUids.includes(u.uid));
+      window._inviteAvailableUsers = allUsers.filter(u => !currentMemberUids.includes(u.uid));
+      document.getElementById("inviteChatSearch").value = '';
+      renderInviteMemberList();
+      showModal("inviteChatModal");
+    }
+
+    function renderInviteMemberList() {
+      const q = (document.getElementById("inviteChatSearch").value || '').trim().toLowerCase();
+      const filtered = window._inviteAvailableUsers.filter(u =>
+        u.uid.includes(q) || u.name.toLowerCase().includes(q)
+      );
       const list = document.getElementById("inviteChatMemberList");
-      list.innerHTML = available.map(u =>
+      list.innerHTML = filtered.map(u =>
         '<label><input type="checkbox" value="' + u.uid + '" /> ' + escapeHtml(u.name) + ' (' + u.uid + ')</label>'
       ).join("");
-      if (available.length === 0) {
-        list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">所有用户已在聊天室中</p>';
+      if (filtered.length === 0) {
+        list.innerHTML = '<p style="padding:12px;color:var(--text-muted)">无匹配用户</p>';
       }
-      showModal("inviteChatModal");
+    }
+
+    function filterInviteMemberList() {
+      renderInviteMemberList();
     }
 
     async function inviteToChat() {
@@ -1668,36 +1686,10 @@
     }
 
     // ---------- Member Info Panel ----------
-    let memberInfoTarget = null; // {uid, name, role, fromChat: bool}
-
-    async function showMemberInfo(el) {
-      const uid = el.dataset ? el.dataset.uid : el;
-      const name = el.dataset ? (el.dataset.name || '') : '';
-      const role = el.dataset ? (el.dataset.role || '') : '';
-      memberInfoTarget = { uid, name, role: role || '', fromChat: false };
-      document.getElementById("memberInfoAvatar").textContent = name.charAt(0);
-      document.getElementById("memberInfoName").textContent = name;
-      document.getElementById("memberInfoUid").textContent = uid;
-      const roleMap = { 'student': '学生', 'teacher': '教师', 'manager': '管理员' };
-      document.getElementById("memberInfoRole").textContent = roleMap[role] || role || '';
-      
-      // Load description and check block status
-      try {
-        const userData = await api("/api/user/" + uid);
-        document.getElementById("memberInfoDesc").textContent = userData.description || '暂无简介';
-      } catch (e) {
-        document.getElementById("memberInfoDesc").textContent = '暂无简介';
-      }
-      updateBlockBtn();
-      updateFriendBtn();
-      renderPrivateCallNotifyToggle();
-
-      showModal("memberInfoModal");
-    }
+    memberInfoTarget = null;
 
     async function showMemberInfoFromPrivate() {
       if (!privateChatPeer) return;
-      // Create a synthetic element with the peer's data
       const el = { dataset: { uid: privateChatPeer, name: privateChatPeerName, role: '' } };
       showMemberInfo(el);
     }
@@ -1739,9 +1731,7 @@
       try {
         const msgs = await api("/api/messages?with=" + popupChatPeer);
         const container = document.getElementById("popupChatMessages");
-        const blockedUids = blacklistCache.map(b => b.uid);
-        const filtered = msgs.filter(m => !blockedUids.includes(m.sender) && !blockedUids.includes(m.receiver));
-        container.innerHTML = filtered.map(m => {
+        container.innerHTML = msgs.map(m => {
           if (m.msg_type === 'system') return renderSystemMessage(m.content);
           if (m.revoked) return renderSystemMessage(m.content);
           const isMe = m.sender === currentUid;

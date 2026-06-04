@@ -946,6 +946,37 @@ def get_user_info(uid):
         'description': user['description'] if user['description'] else ''
     })
 
+@app.route('/api/user/<uid>/tags', methods=['GET'])
+@token_required
+def get_user_tags(uid):
+    conn = get_db()
+    tags = []
+    # 班干部职位
+    cp_rows = conn.execute('''SELECT DISTINCT cp.position_name, c.class_name
+                               FROM class_positions cp
+                               JOIN class_stu cs ON cp.class_id=cs.class_id AND cp.uid=cs.uid
+                               JOIN classes c ON cp.class_id=c.class_id
+                               WHERE cs.uid=?''', (uid,)).fetchall()
+    for r in cp_rows:
+        tags.append({"type": "class", "label": f"{r['class_name']} {r['position_name']}"})
+    # 课代表职位
+    lp_rows = conn.execute('''SELECT DISTINCT lp.position_name, l.lesson_name
+                               FROM lesson_positions lp
+                               JOIN lesson l ON lp.lesson_id=l.lesson_id
+                               WHERE lp.uid=?''', (uid,)).fetchall()
+    for r in lp_rows:
+        tags.append({"type": "lesson", "label": f"{r['lesson_name']} {r['position_name']}"})
+    # 参赛标签
+    ev_rows = conn.execute('''SELECT DISTINCT e.name
+                               FROM events_groups_members egm
+                               JOIN events_groups eg ON egm.group_id=eg.id
+                               JOIN events e ON eg.event_id=e.id
+                               WHERE egm.member_uid=?''', (uid,)).fetchall()
+    for r in ev_rows:
+        tags.append({"type": "event", "label": f"参赛-{r['name']}"})
+    conn.close()
+    return jsonify(tags)
+
 # ---------- 私聊 ----------
 @app.route('/api/users', methods=['GET'])
 @token_required
@@ -1002,6 +1033,10 @@ def send_message():
     if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (receiver, sender)).fetchone():
         conn.close()
         return jsonify({'error':'你已被此用户拉黑，无法发送消息'}),403
+    # Check if sender has blocked receiver
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (sender, receiver)).fetchone():
+        conn.close()
+        return jsonify({'error':'你已拉黑该用户，无法发送消息'}),403
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         if file and msg_type in ('image','video','audio','file'):
@@ -1563,7 +1598,14 @@ def add_friend():
     conn = get_db()
     if not conn.execute('SELECT 1 FROM users WHERE uid=?', (friend_uid,)).fetchone():
         return jsonify({'error': '用户不存在'}), 404
-    
+    # 拉黑检查
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (friend_uid, uid)).fetchone():
+        conn.close()
+        return jsonify({'error': '你已被该用户拉黑'}), 403
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (uid, friend_uid)).fetchone():
+        conn.close()
+        return jsonify({'error': '你已拉黑该用户'}), 403
+
     try:
         now = time.time()
         conn.execute('INSERT INTO friends VALUES (?,?,?)', (uid, friend_uid, now))
@@ -1617,6 +1659,13 @@ def send_friend_request():
     conn = get_db()
     if not conn.execute('SELECT 1 FROM users WHERE uid=?', (to_uid,)).fetchone():
         return jsonify({'error': '用户不存在'}), 404
+    # 拉黑检查
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (to_uid, uid)).fetchone():
+        conn.close()
+        return jsonify({'error': '你已被该用户拉黑'}), 403
+    if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_blocked=1', (uid, to_uid)).fetchone():
+        conn.close()
+        return jsonify({'error': '你已拉黑该用户'}), 403
     if conn.execute('SELECT 1 FROM user_relations WHERE uid=? AND target_uid=? AND is_friend=1', (uid, to_uid)).fetchone():
         return jsonify({'error': '已经是好友了'}), 400
     if conn.execute('SELECT 1 FROM friend_requests WHERE from_uid=? AND to_uid=? AND status="pending"', (uid, to_uid)).fetchone() or \
