@@ -140,9 +140,16 @@
   </head>
   <body>
     <div class="nav" id="navBar"></div>
-    <div class="content" id="queryContent"></div>
-
-    <!-- User Detail Modal -->
+    <div class="content" id="queryContent">
+      <div id="queryMain"></div>
+      <!-- Event Detail View (inline) -->
+      <div id="eventDetailView" style="display:none;">
+        <div style="margin-bottom:16px;">
+          <button class="btn-cancel" onclick="showEventList()" style="padding:6px 14px;border-radius:8px;border:1px solid #e2e8f0;background:white;cursor:pointer;font-size:13px;">← 返回赛事列表</button>
+        </div>
+        <div id="eventDetailContent"></div>
+      </div>
+    </div>
     <div class="modal-overlay" id="memberInfoModal">
       <div class="modal" style="width:380px;">
         <h3>👤 用户信息</h3>
@@ -164,19 +171,28 @@
       </div>
     </div>
 
-    <!-- Event Detail Modal -->
-    <div class="modal-overlay" id="eventDetailModal">
-      <div class="modal" style="width:520px;">
-        <h3 id="eventDetailName">🎉 赛事详情</h3>
-        <div id="eventDetailBody" style="font-size:14px;line-height:1.7;">
-          <div class="info">🕒 <span id="evTime"></span></div>
-          <div class="info">📍 <span id="evLocation"></span></div>
-          <div class="info">👥 <span id="evTarget"></span></div>
-          <div class="info">🏢 <span id="evOrganizer"></span></div>
-          <p style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;" id="evDesc"></p>
+    <!-- Group Members Popup Modal -->
+    <div class="modal-overlay" id="groupMembersModal">
+      <div class="modal" style="width:420px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3>👥 小组成员</h3>
+          <button class="btn-cancel" style="padding:4px 10px;font-size:12px;" onclick="closeModal('groupMembersModal')">✕</button>
         </div>
-        <div class="btn-row" style="margin-top:16px;">
-          <button class="btn-cancel" style="width:100%;" onclick="closeModal('eventDetailModal')">关闭</button>
+        <div id="groupMembersList" style="max-height:300px;overflow-y:auto;"></div>
+        <div id="groupMembersActions" style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;gap:8px;flex-wrap:wrap;display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div class="modal-overlay" id="createGroupModal">
+      <div class="modal" style="width:400px;">
+        <h3>👥 创建小组</h3>
+        <input id="newGroupName" placeholder="小组名称" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;font-size:14px;" />
+        <input id="newGroupMaxMembers" type="number" value="4" min="2" max="20" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;font-size:14px;" />
+        <textarea id="newGroupDesc" placeholder="小组简介/招募要求..." style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;min-height:80px;font-family:inherit;font-size:14px;"></textarea>
+        <div class="btn-row">
+          <button class="btn-cancel" onclick="closeModal('createGroupModal')">取消</button>
+          <button class="btn-primary" onclick="submitCreateGroup()">创建</button>
         </div>
       </div>
     </div>
@@ -314,7 +330,7 @@
           .forEach((b) => b.classList.remove("active"));
         document.querySelector(`[data-key="${key}"]`).classList.add("active");
         const q = queries.find((x) => x.key === key);
-        document.getElementById("queryContent").innerHTML =
+        document.getElementById("queryMain").innerHTML =
           `<div class="query-form">${q.form}</div><div id="res"></div>`;
         if (key === "events") loadEvents();
         if (key === "course") loadCourses();
@@ -398,19 +414,250 @@
             `<h4>${e.name} (${e.type})</h4><div class="info">🕒 ${e.start_time} ~ ${e.end_time}</div><div class="info">📍 ${e.location} · 👥 ${e.target}</div><div>${e.description}</div></div>`,
         );
       }
+      let currentEventDetail = null;
+      function showEventList() {
+        document.getElementById("eventDetailView").style.display = "none";
+        document.getElementById("res").style.display = "block";
+        document.querySelector(".content").style.paddingTop = "";
+        currentEventDetail = null;
+      }
       async function showEventDetail(eid) {
         try {
-          const events = await api("/api/events");
-          const ev = events.find(e => e.id === eid);
-          if (!ev) return;
-          document.getElementById("eventDetailName").textContent = '🎉 ' + ev.name;
-          document.getElementById("evTime").textContent = ev.start_time + ' ~ ' + ev.end_time;
-          document.getElementById("evLocation").textContent = ev.location;
-          document.getElementById("evTarget").textContent = ev.target;
-          document.getElementById("evOrganizer").textContent = ev.organizer;
-          document.getElementById("evDesc").textContent = ev.description;
-          showModal("eventDetailModal");
-        } catch(e) {}
+          const data = await api("/api/events/" + eid);
+          currentEventDetail = data;
+          const uid = sessionStorage.getItem("uid") || "";
+          const role = sessionStorage.getItem("role") || "";
+          const isCreator = data.creator_uid === uid || role === "manager";
+          let myGroupId = data.my_group_id;
+          let html = '<div class="timeline-card" style="padding:20px;margin-bottom:16px;">';
+          html += '<h3 style="margin-bottom:8px;">🎉 ' + escapeHtml(data.name) + ' (' + escapeHtml(data.type) + ')</h3>';
+          html += '<div class="info" style="font-size:14px;margin-bottom:4px;">🕒 ' + escapeHtml(data.start_time || '') + ' ~ ' + escapeHtml(data.end_time || '') + '</div>';
+          html += '<div class="info" style="font-size:14px;margin-bottom:4px;">📍 ' + escapeHtml(data.location || '') + '</div>';
+          html += '<div class="info" style="font-size:14px;margin-bottom:4px;">👥 ' + escapeHtml(data.target || '') + '</div>';
+          html += '<div class="info" style="font-size:14px;margin-bottom:4px;">🏢 ' + escapeHtml(data.organizer || '') + '</div>';
+          if (data.description) {
+            html += '<p style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;font-size:14px;line-height:1.6;">' + escapeHtml(data.description) + '</p>';
+          }
+          html += '</div>';
+
+          // Groups section
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+          html += '<h3 style="font-size:16px;">👥 参赛小组 (' + data.groups.length + ')</h3>';
+          html += '<div style="display:flex;gap:8px;align-items:center;">';
+          html += '<input id="groupSearchInput" placeholder="按学号搜索成员..." style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;width:160px;" onkeypress="if(event.key===\'Enter\') searchGroupMember()">';
+          html += '<button class="btn-cancel" style="padding:6px 12px;font-size:12px;" onclick="searchGroupMember()">🔍</button>';
+          html += '<label style="font-size:13px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="showFullGroups" checked onchange="renderEventGroups()"> 显示满员小组</label>';
+          if (!myGroupId) {
+            html += '<button class="btn" style="padding:6px 14px;font-size:13px;" onclick="showCreateGroupModal()">➕ 创建小组</button>';
+          }
+          html += '</div></div>';
+
+          html += '<div id="groupSearchResult" style="display:none;margin-bottom:10px;padding:10px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac;font-size:13px;"></div>';
+          html += '<div id="groupList"></div>';
+          document.getElementById("eventDetailContent").innerHTML = html;
+          document.getElementById("res").style.display = "none";
+          document.getElementById("eventDetailView").style.display = "block";
+          document.querySelector(".content").scrollTop = 0;
+          document.querySelector(".content").style.paddingTop = "0";
+          renderEventGroups();
+        } catch(e) {
+          alert(e.message);
+          showEventList();
+        }
+      }
+      function renderEventGroups() {
+        const data = currentEventDetail;
+        if (!data) return;
+        const showFull = document.getElementById("showFullGroups").checked;
+        const container = document.getElementById("groupList");
+        const uid = sessionStorage.getItem("uid") || "";
+        const myGroupId = data.my_group_id;
+        let filtered = data.groups;
+        // Sort: recruiting first, then full
+        filtered.sort((a, b) => (a.status === 'recruiting' ? 0 : 1) - (b.status === 'recruiting' ? 0 : 1));
+        if (!showFull) filtered = filtered.filter(g => g.status !== 'full');
+        if (!filtered.length) {
+          container.innerHTML = '<div style="text-align:center;color:#64748b;padding:20px;">暂无小组</div>';
+          return;
+        }
+        container.innerHTML = filtered.map(g => {
+          const statusColor = g.status === 'recruiting' ? '#22c55e' : '#94a3b8';
+          const statusText = g.status === 'recruiting' ? '招募中' : '已满员';
+          let btnHtml = '<button class="btn-cancel" style="padding:4px 10px;font-size:12px;" onclick="viewGroupMembers(' + g.id + ')">查看成员</button>';
+          if (myGroupId === g.id) {
+            // Current user is in this group
+            if (g.leader_uid === uid) {
+              // User is leader
+              const toggleStatus = g.status === 'recruiting' ? 'full' : 'recruiting';
+              const toggleText = g.status === 'recruiting' ? '设置满员' : '设为招募中';
+              btnHtml += '<button class="btn-cancel" style="padding:4px 10px;font-size:12px;" onclick="toggleGroupStatus(' + g.id + ',\'' + toggleStatus + '\')">' + toggleText + '</button>';
+            } else {
+              // User is member (not leader)
+              btnHtml += '<button class="btn-cancel" style="padding:4px 10px;font-size:12px;color:#ef4444;border-color:#ef4444;" onclick="leaveGroup(' + g.id + ')">退出小组</button>';
+            }
+          } else if (!myGroupId) {
+            if (g.status === 'recruiting') {
+              btnHtml += '<button class="btn" style="padding:4px 10px;font-size:12px;" onclick="applyJoinGroup(' + g.id + ')">申请加入</button>';
+            } else {
+              btnHtml += '<span style="font-size:12px;color:#94a3b8;">已满员</span>';
+            }
+          } else {
+            btnHtml += '<span style="font-size:12px;color:#94a3b8;">你已在其他小组</span>';
+          }
+          return '<div class="group-card" style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:10px;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:start;">'
+            + '<div><strong>' + escapeHtml(g.group_name) + '</strong>'
+            + '<span style="font-size:12px;padding:2px 8px;border-radius:10px;background:' + statusColor + ';color:white;margin-left:8px;">' + statusText + '</span></div>'
+            + '<span style="font-size:13px;color:#64748b;">👤 ' + g.member_count + '/' + g.max_members + '</span></div>'
+            + '<div style="font-size:13px;color:#64748b;margin-top:4px;">👨‍👩‍👧‍👦 组长：' + escapeHtml(g.leader_name) + '</div>'
+            + (g.description ? '<div style="font-size:13px;color:#475569;margin-top:4px;">' + escapeHtml(g.description) + '</div>' : '')
+            + '<div style="margin-top:8px;display:flex;gap:6px;" id="groupActions_' + g.id + '">' + btnHtml + '</div></div>';
+        }).join('');
+      }
+      // --- Group Management Functions ---
+      async function toggleGroupStatus(gid, newStatus) {
+        try {
+          const res = await api("/api/events/groups/" + gid + "/status", { method: "PUT", body: JSON.stringify({ status: newStatus }) });
+          alert(res.message);
+          if (currentEventDetail) showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
+      }
+      async function applyJoinGroup(gid) {
+        const msg = prompt('请输入申请留言：', '我想加入你的小组');
+        if (msg === null) return;
+        try {
+          const res = await api("/api/events/groups/" + gid + "/apply", { method: "POST", body: JSON.stringify({ message: msg }) });
+          alert(res.message);
+        } catch(e) { alert(e.message); }
+      }
+      async function leaveGroup(gid) {
+        if (!confirm('确定退出该小组吗？')) return;
+        const uid = sessionStorage.getItem("uid");
+        try {
+          const res = await api("/api/events/groups/" + gid + "/members/" + uid, { method: "DELETE" });
+          alert(res.message);
+          if (currentEventDetail) showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
+      }
+      async function searchGroupMember() {
+        const input = document.getElementById("groupSearchInput");
+        const keyword = input.value.trim();
+        const resultDiv = document.getElementById("groupSearchResult");
+        if (!keyword || !currentEventDetail) {
+          resultDiv.style.display = "none";
+          return;
+        }
+        try {
+          const data = await api("/api/events/groups/search?eid=" + currentEventDetail.id + "&uid=" + encodeURIComponent(keyword));
+          if (data.found) {
+            resultDiv.style.display = "block";
+            resultDiv.innerHTML = '✅ 该成员在 <strong>' + escapeHtml(data.group.group_name) + '</strong> 小组（组长：' + escapeHtml(data.group.leader_name) + '，状态：' + (data.group.status === 'recruiting' ? '招募中' : '已满员') + '，人数：' + data.group.member_count + '/' + data.group.max_members + '）';
+          } else {
+            resultDiv.style.display = "block";
+            resultDiv.innerHTML = '❌ 未找到该成员在任一小组中';
+          }
+        } catch(e) { alert(e.message); }
+      }
+      // --- Group Member Popup ---
+      async function viewGroupMembers(gid) {
+        try {
+          const members = await api("/api/events/groups/" + gid + "/members");
+          const uid = sessionStorage.getItem("uid") || "";
+          const currentGroup = currentEventDetail.groups.find(g => g.id === gid);
+          const isLeader = currentGroup && currentGroup.leader_uid === uid;
+          const myGroupId = currentEventDetail.my_group_id;
+          const inThisGroup = myGroupId === gid;
+          const listEl = document.getElementById("groupMembersList");
+          const actionsEl = document.getElementById("groupMembersActions");
+          listEl.innerHTML = members.map(m => {
+            const avatarChar = (m.name || m.member_uid).charAt(0);
+            let actions = '';
+            if (isLeader && !m.is_leader) {
+              actions = '<button class="btn-cancel" style="padding:2px 8px;font-size:11px;color:#ef4444;border-color:#ef4444;" onclick="kickGroupMember(' + gid + ',\'' + m.member_uid + '\')">踢出</button>';
+            }
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid #f1f5f9;">'
+              + '<div style="display:flex;align-items:center;gap:10px;">'
+              + '<div class="avatar avatar-user" style="width:32px;height:32px;font-size:14px;flex-shrink:0;">' + escapeHtml(avatarChar) + '</div>'
+              + '<div><div style="font-weight:500;font-size:14px;">' + escapeHtml(m.name) + (m.is_leader ? ' <span style="font-size:11px;color:#64748b;">(组长)</span>' : '') + '</div>'
+              + '<div style="font-size:12px;color:#94a3b8;">' + escapeHtml(m.member_uid) + '</div></div></div>'
+              + (actions ? '<div>' + actions + '</div>' : '') + '</div>';
+          }).join('');
+          if (!members.length) {
+            listEl.innerHTML = '<div style="text-align:center;color:#64748b;padding:20px;">暂无成员</div>';
+          }
+          // Bottom actions
+          let bottomHtml = '';
+          if (isLeader) {
+            bottomHtml += '<button class="btn-cancel" style="padding:6px 14px;font-size:13px;color:#ef4444;border-color:#ef4444;" onclick="dissolveGroup(' + gid + ')">🗑️ 解散小组</button>';
+            // Transfer: only if there are non-leader members
+            const nonLeaderMembers = members.filter(m => !m.is_leader);
+            if (nonLeaderMembers.length > 0) {
+              bottomHtml += '<button class="btn-cancel" style="padding:6px 14px;font-size:13px;" onclick="showTransferLeader(' + gid + ')">转让组长</button>';
+            }
+          } else if (inThisGroup) {
+            bottomHtml += '<button class="btn-cancel" style="padding:6px 14px;font-size:13px;color:#ef4444;border-color:#ef4444;" onclick="leaveGroup(' + gid + ')">退出小组</button>';
+          }
+          if (bottomHtml) {
+            actionsEl.style.display = 'flex';
+            actionsEl.innerHTML = bottomHtml;
+          } else {
+            actionsEl.style.display = 'none';
+          }
+          showModal('groupMembersModal');
+        } catch(e) { alert(e.message); }
+      }
+      async function kickGroupMember(gid, targetUid) {
+        if (!confirm('确定要踢出该成员吗？')) return;
+        try {
+          const res = await api("/api/events/groups/" + gid + "/kick", { method: "POST", body: JSON.stringify({ uid: targetUid }) });
+          alert(res.message);
+          closeModal('groupMembersModal');
+          if (currentEventDetail) showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
+      }
+      function showTransferLeader(gid) {
+        const targetUid = prompt('请输入要转让给的小组成员学号：');
+        if (!targetUid) return;
+        if (!confirm('确定将组长转让给 ' + targetUid.trim() + ' 吗？')) return;
+        transferGroupLeader(gid, targetUid.trim());
+      }
+      async function transferGroupLeader(gid, newLeaderUid) {
+        try {
+          const res = await api("/api/events/groups/" + gid + "/transfer", { method: "POST", body: JSON.stringify({ uid: newLeaderUid }) });
+          alert(res.message);
+          closeModal('groupMembersModal');
+          if (currentEventDetail) showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
+      }
+      async function dissolveGroup(gid) {
+        if (!confirm('确定要解散该小组吗？此操作不可撤销。')) return;
+        if (!confirm('再次确认：解散后所有成员将被移除。')) return;
+        try {
+          const res = await api("/api/events/groups/" + gid + "/dissolve", { method: "POST" });
+          alert(res.message);
+          closeModal('groupMembersModal');
+          if (currentEventDetail) showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
+      }	      // --- Create Group ---
+      function showCreateGroupModal() {
+        document.getElementById("newGroupName").value = "";
+        document.getElementById("newGroupMaxMembers").value = "4";
+        document.getElementById("newGroupDesc").value = "";
+        showModal("createGroupModal");
+      }
+      async function submitCreateGroup() {
+        if (!currentEventDetail) return;
+        const name = document.getElementById("newGroupName").value.trim();
+        const maxMembers = parseInt(document.getElementById("newGroupMaxMembers").value) || 4;
+        const desc = document.getElementById("newGroupDesc").value.trim();
+        if (!name) { alert('请输入小组名称'); return; }
+        if (maxMembers < 2 || maxMembers > 20) { alert('人数上限需为2-20的整数'); return; }
+        try {
+          const res = await api("/api/events/" + currentEventDetail.id + "/groups", { method: "POST", body: JSON.stringify({ group_name: name, max_members: maxMembers, description: desc }) });
+          alert(res.message);
+          closeModal("createGroupModal");
+          showEventDetail(currentEventDetail.id);
+        } catch(e) { alert(e.message); }
       }
       async function tutorDuty() {
         const date = document.getElementById("tdate").value,

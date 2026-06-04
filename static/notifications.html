@@ -151,6 +151,23 @@
             '<p>邀请你加入聊天室「' + escapeHtml(chatName) + '」</p>' +
             '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
             actions + markReadBtn + '</div>';
+        } else if (n.type === 'group_join') {
+          const extra = getExtra(n);
+          const groupName = extra.group_name || '';
+          const eventName = extra.event_name || '';
+          const isPending = n.status === 'pending';
+          const actions = isPending
+            ? '<div class="row-actions">' +
+              '<button class="btn-sm btn-sm-primary" onclick="event.stopPropagation();approveGroupJoin(\'' + n.id + '\')">同意</button>' +
+              '<button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();rejectGroupJoin(\'' + n.id + '\')">拒绝</button>' +
+            '</div>'
+            : '<p style="color:var(--text-muted);font-size:12px;margin-top:4px;">✅ 已处理</p>';
+          return '<div class="card' + (isUnread ? ' unread' : '') + '" data-id="' + n.id + '" oncontextmenu="showCtx(event,\'' + n.id + '\',false,\'' + n.type + '\')">' +
+            '<h3>👥 组队申请 <span class="badge badge-invite">来自 ' + escapeHtml(n.sender_name) + '</span></h3>' +
+            '<p>申请加入赛事「' + escapeHtml(eventName) + '」的小组「' + escapeHtml(groupName) + '」</p>' +
+            (n.content ? '<p style="font-size:13px;color:#64748b;margin-top:4px;">留言：' + escapeHtml(n.content) + '</p>' : '') +
+            '<div class="meta">' + new Date(n.created_at * 1000).toLocaleString("zh-CN") + '</div>' +
+            actions + markReadBtn + '</div>';
         } else if (n.type === 'system') {
           const lockCls = n.is_locked ? ' locked' : '';
           const unreadCls = isUnread ? ' unread' : '';
@@ -270,6 +287,18 @@
         } catch (e) { alert(e.message); }
       }
       async function rejectChatInvite(id) {
+        try {
+          await api("/api/notifications/" + id + "/reject", { method: "POST" });
+          loadNotifications();
+        } catch (e) { alert(e.message); }
+      }
+      async function approveGroupJoin(id) {
+        try {
+          await api("/api/notifications/" + id + "/approve", { method: "POST" });
+          loadNotifications();
+        } catch (e) { alert(e.message); }
+      }
+      async function rejectGroupJoin(id) {
         try {
           await api("/api/notifications/" + id + "/reject", { method: "POST" });
           loadNotifications();

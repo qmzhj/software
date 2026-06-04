@@ -1930,6 +1930,35 @@ def approve_notification(notif_id):
                      (chat_id, 'system', f'{user_name} 接受了邀请加入聊天室', 'system', now))
         conn.commit(); conn.close()
         return jsonify({'message': '已接受邀请', 'chat_id': chat_id, 'chat_name': chat_name})
+    elif n['type'] == 'group_join':
+        extra = json.loads(n['extra'] or '{}')
+        gid = extra['group_id']
+        cur = conn.execute('SELECT status, max_members FROM events_groups WHERE id=?', (gid,)).fetchone()
+        if not cur:
+            return jsonify({'error': '小组不存在'}), 404
+        if cur['status'] == 'full':
+            return jsonify({'error': '该小组已满员'}), 400
+        cur_count = conn.execute('SELECT COUNT(*) FROM events_groups_members WHERE group_id=?', (gid,)).fetchone()[0]
+        if cur_count >= cur['max_members']:
+            conn.execute('UPDATE events_groups SET status=? WHERE id=?', ('full', gid))
+            return jsonify({'error': '小组人数已满，已自动设为满员'}), 400
+        conn.execute('INSERT INTO events_groups_members (group_id, member_uid) VALUES (?,?)', (gid, n['sender_uid']))
+        conn.execute("UPDATE notifications SET status='approved', is_read=1 WHERE id=?", (notif_id,))
+        # 同步加入赛事聊天室
+        group_row = conn.execute('SELECT event_id FROM events_groups WHERE id=?', (gid,)).fetchone()
+        if group_row:
+            chat_id = 'chat_event_' + str(group_row['event_id'])
+            now2 = time.time()
+            conn.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)', (chat_id, n['sender_uid'], 'member', now2, 0))
+            conn.execute('''INSERT OR IGNORE INTO user_group_chats (group_id, chat_id, chat_name)
+                             SELECT ?, ?, name FROM events WHERE id=?''',
+                          ('sys_events_' + n['sender_uid'], chat_id, group_row['event_id']))
+            member_name = conn.execute('SELECT name FROM users WHERE uid=?', (n['sender_uid'],)).fetchone()
+            if member_name:
+                conn.execute("INSERT INTO group_messages (group_id, sender, content, msg_type, timestamp) VALUES (?,?,?,?,?)",
+                             (chat_id, 'system', f'{member_name["name"]} 加入了小组，进入聊天室', 'system', now2))
+        conn.commit(); conn.close()
+        return jsonify({'message': '已同意加入申请'})
     else:
         return jsonify({'error': '该类型通知不支持审批操作'}), 400
 
@@ -1948,6 +1977,8 @@ def reject_notification(notif_id):
         extra = json.loads(n['extra'] or '{}')
         chat_id = extra.get('chat_id', '')
         conn.execute("UPDATE chat_invites SET status='rejected' WHERE chat_id=? AND to_uid=? AND status='pending'", (chat_id, uid))
+    elif n['type'] == 'group_join':
+        pass
     conn.commit(); conn.close()
     return jsonify({'message': '已拒绝'})
 
@@ -2775,6 +2806,341 @@ def get_events():
     return jsonify([{'id':e['id'],'name':e['name'],'type':e['type'],'start_time':e['start_time'],
                      'end_time':e['end_time'],'location':e['location'],'target':e['target'],
                      'organizer':e['organizer'],'description':e['description'],'creator_uid':e['creator_uid']} for e in events])
+
+@app.route('/api/events/<int:event_id>', methods=['GET'])
+@token_required
+def get_event_detail(event_id):
+    conn = get_db()
+    event = conn.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
+    if not event:
+        conn.close()
+        return jsonify({'error': '赛事不存在'}), 404
+    groups = conn.execute('''SELECT eg.*, u.name as leader_name,
+        (SELECT COUNT(*) FROM events_groups_members WHERE group_id=eg.id) as member_count
+        FROM events_groups eg JOIN users u ON eg.leader_uid=u.uid
+        WHERE eg.event_id=? ORDER BY eg.created_at''', (event_id,)).fetchall()
+    uid = g.current_user['uid']
+    my_group = conn.execute('''SELECT egm.group_id FROM events_groups_members egm
+        JOIN events_groups eg ON egm.group_id=eg.id
+        WHERE eg.event_id=? AND egm.member_uid=?''', (event_id, uid)).fetchone()
+    conn.close()
+    return jsonify({
+        'id': event['id'],
+        'name': event['name'],
+        'type': event['type'],
+        'start_time': event['start_time'],
+        'end_time': event['end_time'],
+        'location': event['location'],
+        'target': event['target'],
+        'organizer': event['organizer'],
+        'description': event['description'],
+        'creator_uid': event['creator_uid'],
+        'groups': [{
+            'id': g['id'],
+            'group_name': g['group_name'],
+            'leader_uid': g['leader_uid'],
+            'leader_name': g['leader_name'],
+            'status': g['status'],
+            'max_members': g['max_members'],
+            'description': g['description'],
+            'member_count': g['member_count'],
+            'created_at': g['created_at']
+        } for g in groups],
+        'my_group_id': my_group['group_id'] if my_group else None
+    })
+
+@app.route('/api/events', methods=['POST'])
+@token_required
+def create_event():
+    if g.current_user['role'] != 'manager':
+        return jsonify({'error': '仅管理员可发布赛事'}), 403
+    data = request.get_json()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT INTO events (name, type, start_time, end_time, location, target, organizer, description, creator_uid)
+                 VALUES (?,?,?,?,?,?,?,?,?)''',
+              (data['name'], data.get('type',''), data.get('start_time',''),
+               data.get('end_time',''), data.get('location',''), data.get('target',''),
+               data.get('organizer',''), data.get('description',''), g.current_user['uid']))
+    eid = c.lastrowid
+    chat_id = 'chat_event_' + str(eid)
+    now = time.time()
+    c.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
+              (chat_id, data['name'] + '聊天室', 'system', now, 'system', '赛事'))
+    c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)',
+              (chat_id, g.current_user['uid'], 'admin', now, 0))
+    # 同步到管理员的"赛事"系统群组
+    admin_group_id = 'sys_events_' + g.current_user['uid']
+    c.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+              (admin_group_id, chat_id, data['name']))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '赛事发布成功', 'event_id': eid}), 201
+
+@app.route('/api/events/<int:event_id>/groups', methods=['POST'])
+@token_required
+def create_event_group(event_id):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    group_name = data.get('group_name', '').strip()
+    if not group_name:
+        return jsonify({'error': '小组名称不能为空'}), 400
+    max_members = data.get('max_members', 4)
+    if not isinstance(max_members, int) or max_members < 2 or max_members > 20:
+        return jsonify({'error': '人数上限需为2-20的整数'}), 400
+    conn = get_db()
+    existing = conn.execute('''SELECT 1 FROM events_groups_members egm
+        JOIN events_groups eg ON egm.group_id=eg.id
+        WHERE eg.event_id=? AND egm.member_uid=?''', (event_id, uid)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({'error': '你已在该赛事的小组中，不能创建新小组'}), 400
+    c = conn.cursor()
+    c.execute('INSERT INTO events_groups (event_id, group_name, leader_uid, max_members, description) VALUES (?,?,?,?,?)',
+              (event_id, group_name, uid, max_members, data.get('description', '')))
+    gid = c.lastrowid
+    c.execute('INSERT INTO events_groups_members (group_id, member_uid) VALUES (?,?)', (gid, uid))
+    # 将创建者加入赛事聊天室
+    chat_id = 'chat_event_' + str(event_id)
+    now_ts = time.time()
+    c.execute('INSERT OR IGNORE INTO group_members VALUES (?,?,?,?,?)', (chat_id, uid, 'member', now_ts, 0))
+    # 同步到创建者的"赛事"系统群组
+    c.execute('INSERT OR IGNORE INTO user_group_chats (group_id, chat_id, chat_name) '
+              'SELECT ?, ?, name FROM events WHERE id=?',
+              ('sys_events_' + uid, chat_id, event_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '小组创建成功', 'group_id': gid}), 201
+
+@app.route('/api/events/groups/search', methods=['GET'])
+@token_required
+def search_event_group_member():
+    eid = request.args.get('eid', type=int)
+    uid = request.args.get('uid', '').strip()
+    if not eid or not uid:
+        return jsonify({'error': '参数不足'}), 400
+    conn = get_db()
+    group = conn.execute('''SELECT eg.*, u.name as leader_name,
+        (SELECT COUNT(*) FROM events_groups_members WHERE group_id=eg.id) as member_count
+        FROM events_groups eg
+        JOIN events_groups_members egm ON eg.id = egm.group_id
+        JOIN users u ON eg.leader_uid=u.uid
+        WHERE eg.event_id=? AND egm.member_uid=?''', (eid, uid)).fetchone()
+    conn.close()
+    if group:
+        return jsonify({'found': True, 'group': {
+            'id': group['id'], 'group_name': group['group_name'],
+            'leader_name': group['leader_name'], 'status': group['status'],
+            'member_count': group['member_count'],
+            'max_members': group['max_members']
+        }})
+    return jsonify({'found': False})
+
+@app.route('/api/events/groups/<int:gid>/status', methods=['PUT'])
+@token_required
+def set_event_group_status(gid):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    new_status = data.get('status', 'full')
+    if new_status not in ('recruiting', 'full'):
+        return jsonify({'error': '无效的状态值'}), 400
+    conn = get_db()
+    group = conn.execute('SELECT * FROM events_groups WHERE id=?', (gid,)).fetchone()
+    if not group:
+        return jsonify({'error': '小组不存在'}), 404
+    if group['leader_uid'] != uid:
+        return jsonify({'error': '仅组长可修改状态'}), 403
+    conn.execute('UPDATE events_groups SET status=? WHERE id=?', (new_status, gid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': f'状态已更新为 {new_status}'})
+
+@app.route('/api/events/groups/<int:gid>/apply', methods=['POST'])
+@token_required
+def apply_join_event_group(gid):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    message = data.get('message', '') or '我想加入你的小组'
+    conn = get_db()
+    group = conn.execute('''SELECT eg.*, e.name as event_name FROM events_groups eg
+        JOIN events e ON eg.event_id=e.id WHERE eg.id=?''', (gid,)).fetchone()
+    if not group:
+        return jsonify({'error': '小组不存在'}), 404
+    if group['status'] == 'full':
+        return jsonify({'error': '该小组已满员'}), 400
+    existing = conn.execute('SELECT 1 FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, uid)).fetchone()
+    if existing:
+        return jsonify({'error': '你已在该小组中'}), 400
+    # 检查是否已在该赛事的其他小组中
+    other_group = conn.execute('''SELECT 1 FROM events_groups_members egm
+        JOIN events_groups eg ON egm.group_id=eg.id
+        WHERE eg.event_id=? AND egm.member_uid=? AND eg.id!=?''', (group['event_id'], uid, gid)).fetchone()
+    if other_group:
+        conn.close()
+        return jsonify({'error': '你已在该赛事的其他小组中'}), 400
+    now = time.time()
+    sender_user = conn.execute('SELECT name FROM users WHERE uid=?', (uid,)).fetchone()
+    sender_name = sender_user['name'] if sender_user else uid
+    conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, extra, status, created_at) VALUES (?,?,?,?,?,'pending',?)",
+                 ('group_join', uid, group['leader_uid'], message,
+                  json.dumps({'group_id': gid, 'group_name': group['group_name'], 'event_name': group['event_name']}),
+                  now))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '申请已发送，等待组长审批'})
+
+@app.route('/api/events/groups/<int:gid>/members/<member_uid>', methods=['DELETE'])
+@token_required
+def leave_event_group(gid, member_uid):
+    uid = g.current_user['uid']
+    conn = get_db()
+    group = conn.execute('SELECT * FROM events_groups WHERE id=?', (gid,)).fetchone()
+    if not group:
+        return jsonify({'error': '小组不存在'}), 404
+    if member_uid != uid:
+        if group['leader_uid'] != uid:
+            return jsonify({'error': '无权操作'}), 403
+    if member_uid == group['leader_uid']:
+        return jsonify({'error': '组长不能退出，请先转让组长或解散小组'}), 400
+    check = conn.execute('SELECT 1 FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, member_uid)).fetchone()
+    if not check:
+        conn.close()
+        return jsonify({'error': '该成员不在此小组中'}), 404
+    conn.execute('DELETE FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, member_uid))
+    # 从赛事聊天室移除
+    chat_id = 'chat_event_' + str(group['event_id'])
+    conn.execute('DELETE FROM group_members WHERE group_id=? AND uid=?', (chat_id, member_uid))
+    # 从退出者的"赛事"系统群组移除
+    conn.execute('DELETE FROM user_group_chats WHERE group_id=? AND chat_id=?',
+                 ('sys_events_' + member_uid, chat_id))
+    # 如果之前满员，退出后人数低于上限则恢复招募中
+    if group['status'] == 'full':
+        remaining = conn.execute('SELECT COUNT(*) FROM events_groups_members WHERE group_id=?', (gid,)).fetchone()[0]
+        if remaining < group['max_members']:
+            conn.execute('UPDATE events_groups SET status=? WHERE id=?', ('recruiting', gid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已退出小组'})
+
+@app.route('/api/events/groups/<int:gid>/members', methods=['GET'])
+@token_required
+def get_event_group_members(gid):
+    conn = get_db()
+    group = conn.execute('SELECT * FROM events_groups WHERE id=?', (gid,)).fetchone()
+    if not group:
+        conn.close()
+        return jsonify({'error': '小组不存在'}), 404
+    members = conn.execute('''SELECT egm.member_uid, u.name, u.role
+        FROM events_groups_members egm JOIN users u ON egm.member_uid=u.uid
+        WHERE egm.group_id=? ORDER BY egm.id''', (gid,)).fetchall()
+    conn.close()
+    return jsonify([{
+        'member_uid': m['member_uid'],
+        'name': m['name'],
+        'role': m['role'],
+        'is_leader': m['member_uid'] == group['leader_uid']
+    } for m in members])
+
+@app.route('/api/events/groups/<int:gid>/kick', methods=['POST'])
+@token_required
+def kick_event_group_member(gid):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    target_uid = data.get('uid', '').strip()
+    if not target_uid:
+        return jsonify({'error': '参数不足'}), 400
+    conn = get_db()
+    group = conn.execute('SELECT * FROM events_groups WHERE id=?', (gid,)).fetchone()
+    if not group:
+        conn.close()
+        return jsonify({'error': '小组不存在'}), 404
+    if group['leader_uid'] != uid:
+        conn.close()
+        return jsonify({'error': '仅组长可踢出成员'}), 403
+    if target_uid == uid:
+        conn.close()
+        return jsonify({'error': '不能踢出自己'}), 400
+    if target_uid == group['leader_uid']:
+        conn.close()
+        return jsonify({'error': '不能踢出组长'}), 400
+    check = conn.execute('SELECT 1 FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, target_uid)).fetchone()
+    if not check:
+        conn.close()
+        return jsonify({'error': '该成员不在此小组中'}), 404
+    conn.execute('DELETE FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, target_uid))
+    chat_id = 'chat_event_' + str(group['event_id'])
+    conn.execute('DELETE FROM group_members WHERE group_id=? AND uid=?', (chat_id, target_uid))
+    conn.execute('DELETE FROM user_group_chats WHERE group_id=? AND chat_id=?',
+                 ('sys_events_' + target_uid, chat_id))
+    if group['status'] == 'full':
+        remaining = conn.execute('SELECT COUNT(*) FROM events_groups_members WHERE group_id=?', (gid,)).fetchone()[0]
+        if remaining < group['max_members']:
+            conn.execute('UPDATE events_groups SET status=? WHERE id=?', ('recruiting', gid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '已踢出成员'})
+
+@app.route('/api/events/groups/<int:gid>/transfer', methods=['POST'])
+@token_required
+def transfer_event_group_leader(gid):
+    uid = g.current_user['uid']
+    data = request.get_json()
+    new_leader_uid = data.get('uid', '').strip()
+    if not new_leader_uid:
+        return jsonify({'error': '参数不足'}), 400
+    conn = get_db()
+    group = conn.execute('SELECT * FROM events_groups WHERE id=?', (gid,)).fetchone()
+    if not group:
+        conn.close()
+        return jsonify({'error': '小组不存在'}), 404
+    if group['leader_uid'] != uid:
+        conn.close()
+        return jsonify({'error': '仅组长可转让组长'}), 403
+    if new_leader_uid == uid:
+        conn.close()
+        return jsonify({'error': '不能转让给自己'}), 400
+    check = conn.execute('SELECT 1 FROM events_groups_members WHERE group_id=? AND member_uid=?', (gid, new_leader_uid)).fetchone()
+    if not check:
+        conn.close()
+        return jsonify({'error': '目标用户不在此小组中'}), 404
+    conn.execute('UPDATE events_groups SET leader_uid=? WHERE id=?', (new_leader_uid, gid))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '组长已转让'})
+
+@app.route('/api/events/groups/<int:gid>/dissolve', methods=['POST'])
+@token_required
+def dissolve_event_group(gid):
+    uid = g.current_user['uid']
+    conn = get_db()
+    group = conn.execute('SELECT eg.*, e.name as event_name FROM events_groups eg JOIN events e ON eg.event_id=e.id WHERE eg.id=?', (gid,)).fetchone()
+    if not group:
+        conn.close()
+        return jsonify({'error': '小组不存在'}), 404
+    if group['leader_uid'] != uid:
+        conn.close()
+        return jsonify({'error': '仅组长可解散小组'}), 403
+    # 获取所有成员列表（用于通知和清理）
+    members = conn.execute('SELECT member_uid FROM events_groups_members WHERE group_id=?', (gid,)).fetchall()
+    chat_id = 'chat_event_' + str(group['event_id'])
+    now = time.time()
+    # 给每个成员发送解散通知（除组长自己外）
+    for m in members:
+        if m['member_uid'] != uid:
+            conn.execute("INSERT INTO notifications (type, sender_uid, receiver_uid, content, status, created_at) VALUES (?,?,?,?,'sent',?)",
+                         ('system', uid, m['member_uid'], f'小组「{group["group_name"]}」已解散（赛事：{group["event_name"]}）', now))
+        # 从聊天室移除
+        conn.execute('DELETE FROM group_members WHERE group_id=? AND uid=?', (chat_id, m['member_uid']))
+        # 从赛事群组移除
+        conn.execute('DELETE FROM user_group_chats WHERE group_id=? AND chat_id=?',
+                     ('sys_events_' + m['member_uid'], chat_id))
+    # 删除小组成员记录
+    conn.execute('DELETE FROM events_groups_members WHERE group_id=?', (gid,))
+    # 删除小组
+    conn.execute('DELETE FROM events_groups WHERE id=?', (gid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '小组已解散'})
 
 @app.route('/api/tutor_duty', methods=['GET'])
 @token_required
