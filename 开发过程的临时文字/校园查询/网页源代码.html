@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8" />
+	<meta name="renderer" content="webkit"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+	<title>综合服务平台 - 华南师范大学</title>
+	<!-- App favicon -->
+	<link rel="shortcut icon" href="https://statics.scnu.edu.cn/statics/images/favicon.ico">
+	<!-- App css -->
+	<link rel="stylesheet" type="text/css" id="bs-default-stylesheet"  href="/AccountService/static/plugins/assets/css/bootstrap-creative.min.css"/>
+	<link rel="stylesheet" type="text/css" id="app-default-stylesheet" href="/AccountService/static/plugins/assets/css/app-creative.min.css?ver=20260324"/>
+	<link rel="stylesheet" type="text/css" id="bs-dark-stylesheet"     href="/AccountService/static/plugins/assets/css/bootstrap-creative-dark.min.css?ver=20260324"/>
+	<link rel="stylesheet" type="text/css" id="app-dark-stylesheet"    href="/AccountService/static/plugins/assets/css/app-creative-dark.min.css?ver=20260324"/>
+	<!-- customer css -->
+	<link rel="stylesheet" type="text/css" href="/AccountService/static/fullscreen/css/customer.css?ver=20250916" />
+	<!-- <link rel="stylesheet" type="text/css" href="/AccountService/static/fullscreen/css/style.css?ver=20231024002" /> -->
+	<!-- icons -->
+	<link rel="stylesheet" type="text/css" href="/AccountService/static/plugins/assets/css/icons.min.css"/>
+
+</head>
+
+<body class="loading" data-layout-mode="horizontal" data-layout='{"mode": "light", "width": "fluid", "menuPosition": "fixed", "topbar": {"color": "dark"}}'>
+
+<!-- Begin page -->
+<div id="wrapper">
+<!-- Topbar Start -->
+	<div class="topnav">
+		<div class="container-fluid">
+			<nav class="navbar navbar-light navbar-expand-lg topnav-menu">
+				<div id="topnav-menu-content">
+					<ul class="navbar-nav scnulink">
+						<li class="nav-item"><a class="nav-link arrow-none" href="https://www.scnu.edu.cn" target="_blank"><i class="fas fa-home"></i> 华南师范大学首页</a></li>
+						<li class="nav-item"><a class="nav-link arrow-none" href="http://module.scnu.edu.cn/sitemap" target="_blank"><i class="fas fa-map"></i> 网站地图</a></li>
+					</ul>
+					<ul class="navbar-nav ssolink">
+						<li class="nav-item" style="display: none;"><a class="nav-link arrow-none" href="https://wpa1.qq.com/aKD5QReJ?_type=wpa&qidian=true" target="_blank"><i class="fas fa-question-circle"></i> 华师百科</a></li>
+												<li class="nav-item"><a class="nav-link arrow-none" href="../collection/list.html" target="_blank"><i class="fas fa-star"></i> 我的收藏</a></li>
+					</ul> <!-- end navbar-->
+				</div> <!-- end .collapsed-->
+			</nav>
+		</div> <!-- end container-fluid -->
+	</div>
+	<!-- end Topbar -->
+	<!-- Topbar Start -->
+	<div class="navbar-custom">
+		<div class="container-fluid">
+			<ul class="list-unstyled topnav-menu float-right mb-0">
+				<!-- search start 
+				<li class="d-none d-lg-block">
+					<div class="app-search">
+						<div class="app-search-box dropdown">
+							<div class="input-group">
+								<input type="search" class="form-control" placeholder="搜索" id="top-search">
+								<div class="input-group-append">
+									<button class="btn srcbtn" type="button"><i class="fe-search"></i></button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</li>
+				<li class="dropdown d-inline-block d-lg-none">
+					<a class="nav-link nav-search dropdown-toggle arrow-none waves-effect waves-light" data-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+						<i class="fe-search noti-icon"></i>
+					</a>
+					<div class="dropdown-menu dropdown-lg dropdown-menu-right p-0">
+						<div class="p-3">
+							<div class="input-group">
+								<input type="text" class="form-control" placeholder="搜索">
+								<div class="input-group-append">
+									<button class="btn srcbtn btn-danger waves-effect waves-light" type="button">提交</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</li>
+				-->
+				<!-- search end -->
+				<li class="dropdown calendar-list topbar-dropdown">
+					<a title="我的日程" class="nav-link dropdown-toggle waves-effect waves-light" data-toggle="dropdown" href="../mysite/calendar.html" role="button" aria-haspopup="false" aria-expanded="false">
+						<i></i>
+						<span class="badge noti-icon-badge calendar_today">9</span>
+					</a>
+				</li>
+
+				<li class="dropdown notification-list topbar-dropdown">
+					<a title="未读邮件" class="nav-link dropdown-toggle waves-effect waves-light" data-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+						<i></i>
+						<span class="badge noti-icon-badge email-total">999</span>
+					</a>
+					<div class="dropdown-menu dropdown-menu-right">
+						<input id="exmail_total" type="hidden" value="0">
+						<input id="scnumail_total" type="hidden" value="0">
+						<a href="../user/index_scnumail_login.html" class="dropdown-item" target="_blank">
+							<div class="align-middle">
+								公务邮箱
+								<span class="text-danger float-right mail_scnu">绑定</span>
+							</div>
+						</a>
+						<a href="../openapi/fastlogin.html?app_id=11&key_name=forward&key_data=../view/fastlogin.html" class="dropdown-item" target="_blank">
+							<div class="align-middle">
+								个人邮箱
+								<span class="badge badge-danger badge-pill float-right mail_new">999</span>
+							</div>
+						</a>
+					</div>
+				</li>
+				<li class="nav-list dropdown notification-list topbar-dropdown">
+					<a href="javascript:void(0);" class="nav-link nav-user right-bar-toggle waves-effect waves-light" 
+							role="button" aria-haspopup="false" aria-expanded="false">
+						<img id="top_bar_usericon" src="../file/images/userPhoto/default.jpg" alt="user-image" class="rounded-circle">
+						<span id="top_bar_truename" class="pro-user-name ml-1">loading…</span>
+					</a>
+				</li>
+			</ul>
+			<!-- LOGO -->
+			<div class="logo-box">
+				<a href="../user/index.html" title="华南师范大学综合服务平台" class="logo logo-dark text-center">
+					<span class="logo-es"><img src="../static/fullscreen/images/images/title-logo-mobile.png" alt="" height="54"></span>
+					<span class="logo-sm"><img src="../static/fullscreen/images/title-logo-small.png" alt="" height="54"></span>
+					<span class="logo-lg"><img src="../static/fullscreen/images/title-logo-full.png" alt="" height="54"></span>
+				</a>
+				<a href="../user/index.html" title="华南师范大学综合服务平台" class="logo logo-light text-center">
+					<span class="logo-es"><img src="../static/fullscreen/images/images/title-logo-mobile.png" alt="" height="54"></span>
+					<span class="logo-sm"><img src="../static/fullscreen/images/title-logo-small.png" alt="" height="54"></span>
+					<span class="logo-lg"><img src="../static/fullscreen/images/title-logo-full.png" alt="" height="54"></span>
+				</a>
+			</div>
+
+			<ul class="list-unstyled topnav-menu topnav-menu-left m-0">
+				<li>
+					<button class="button-menu-mobile waves-effect waves-light">
+						<i class="fe-menu"></i>
+					</button>
+				</li>
+				<li>
+					<!-- Mobile menu toggle (Horizontal Layout)-->
+					<a class="navbar-toggle nav-link" data-toggle="collapse" data-target="#topnav-menu-content">
+						<div class="lines">
+							<span></span>
+							<span></span>
+							<span></span>
+						</div>
+					</a>
+					<!-- End mobile menu toggle-->
+				</li>   
+			</ul>
+			<div class="navbar-block navbar-expand-lg">
+				<ul id="topnav-menu-content"
+					 class="collapse navbar-collapse nav-list-menu list-unstyled topnav-menu topnav-menu-left m-0">
+					<li class="nav-list">
+						<a id="menu_index" class="nav-link waves-effect waves-light" href="../user/index.html" role="button">
+							<p class="nav-text">首页</p>
+							<p class="nav-en">Home</p>
+						</a>
+					</li>					
+					<li class="nav-list">
+						<a id="menu_article" class="nav-link waves-effect waves-light" href="../article/articlelist.html" role="button">
+							<p class="nav-text">校内门户</p>
+							<p class="nav-en">Notice</p>
+						</a>
+					</li>
+					<li class="nav-list">
+						<a id="menu_subscribe" class="nav-link waves-effect waves-light" href="../subscribe/list.html" role="button">
+							<p class="nav-text">订阅中心</p>
+							<p class="nav-en">Subscribe</p>
+						</a>
+					</li>
+					<li class="nav-list">
+						<a id="menu_app" class="nav-link waves-effect waves-light" href="../user/applist.html" role="button">
+							<p class="nav-text">校园应用</p>
+							<p class="nav-en">Application</p>
+						</a>
+					</li>
+					<!--<li class="nav-list">
+						<a class="nav-link waves-effect waves-light" href="../user/office365.html" target="_blank" role="button">
+							<p class="nav-text">办公套件</p>
+							<p class="nav-en">Office 365</p>
+						</a>
+					</li>-->
+					<li class="nav-list dropdown software-list topbar-dropdown">
+						<a class="nav-link waves-effect waves-light dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="false" aria-expanded="false">
+							<p class="nav-text">正版软件</p>
+							<p class="nav-en">Software</p>
+						</a>
+						<div class="dropdown-menu dropdown-menu-right">
+							<a href="../openapi/fastlogin.html?app_id=62" target="_blank" class="dropdown-item"><div class="align-middle"><i class="fas fa-download"></i> 软件下载</div></a>
+							<a href="../user/office365.html" target="_blank" class="dropdown-item"><div class="align-middle"><i class="fab fa-microsoft"></i> 微软云服务</div></a>
+							<a href="https://open.wps.cn/oauth/v1/auth?app_id=NZ20241226XLNVOC&cb=https://365.kdocs.cn" target="_blank" class="dropdown-item"><div class="align-middle"><i class="fas fa-file-alt"></i> 金山文档</div></a>
+						</div>
+					</li>
+					<li id="menu_calendar" class="nav-list">
+						<a class="nav-link waves-effect waves-light" href="../mysite/calendar.html" role="button">
+							<p class="nav-text">我的日历</p>
+							<p class="nav-en">Schedule</p>
+						</a>
+					</li>
+				</ul>
+			</div>
+			<div class="clearfix"></div>
+		</div>
+	</div>
+	<!-- end Topbar -->	<!-- ============================================================== -->
+	<!-- Start Page Content here -->
+	<!-- ============================================================== -->
+
+	<div class="content-page">
+		<div class="content">
+
+			<!-- Start Content-->
+			<div class="container-fluid list-page">
+				<!-- start page title -->
+				<div class="row">
+					<div class="col-12">
+						<div class="page-title-box">
+							<div class="d-block page-title-right">
+								<ol class="d-flex breadcrumb m-0">
+									<li class="breadcrumb-item"><a href="../user/index.html">首页</a></li>
+									<li class="breadcrumb-item"><a href="javascript: void(0);">校园门户</a></li>
+									<li class="breadcrumb-item active">学校公文</li>
+								</ol>
+							</div>
+							<h4 class="page-title">校园门户 Notice</h4>
+						</div>
+					</div>
+				</div>
+				<!-- end page title -->
+
+				<div class="row">
+					<div class="col-lg-12 col-xl-2">
+						<div class="card card-list-nav">
+							<div class="card-body">
+								<ul>
+									<li><a id="xntz" href="articlelist.html?subject=xntz">学校通知</a></li>
+									<li><a id="bctz" href="articlelist.html?subject=bctz">部处通知</a></li>
+									<li><a id="xxgw" href="articlelist.html?subject=xxgw">学校公文</a></li>
+									<li><a id="xxgg" href="articlelist.html?subject=xxgg">学校公告</a></li>
+								</ul>
+							</div>
+						</div>
+					</div>
+					<div class="col-lg-12 col-xl-10">
+						<div class="card card-list-content">
+							<div class="card-body">
+								<div class="header-title fix">
+									<span id="article_subject">学校公文</span>
+									<ul id="article_file_type" class="d-none d-lg-block float-left article-type">
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type current">所有公文</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">规章制度</a></li>
+										<li class="col-xs-2 d-none"><a href="javascript:;" class="fast-xxgw-type">会议纪要</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">华师党委</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">华师</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">华师干字</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">华师办</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">华师纪委</a></li>
+										<li class="col-xs-2"><a href="javascript:;" class="fast-xxgw-type">其他</a></li>
+									</ul>
+									<div class="float-right list-search">
+										<div class="float-left list-search-form">
+											<input id="search_keydata" type="text" class="keywords form-control"
+												onkeydown="if(event.keyCode==13){search();}" placeholder="请输入关键字进行搜索">
+											<input id="search_dept" type="text" class="keywords form-control" style="float: left;width: 200px;border-radius: 0;padding-left: 5px;padding-right: 0;"
+												onkeydown="if(event.keyCode==13){search();}" placeholder="请输入发布单位进行搜索">
+											<select id="subject-fast" class="form-control" onchange="changeSubjectFast()" style="float: left;width: 100px;border-radius: 0;padding-left: 5px;padding-right: 0;">
+												<option value="all">不限</option>
+												<option value="xxgw">学校公文</option>
+												<option value="xntz">学校通知</option>
+												<option value="bctz">部处通知</option>
+												<option value="xxgg">学校公告</option>
+											</select>
+											<input type="button" class="submit" onclick="search()">
+											<input id="search_subject" type="hidden" value="all"/>
+											<input id="search_sec_subject" type="hidden" value=""/>
+											<input id="search_keyname" type="hidden" value="title"/>
+											<input id="search_filetype" type="hidden" value=""/>
+											<input id="search_campus" type="hidden" value="-1"/>
+											<input id="search_timetype" type="hidden" value="0"/>
+										</div>
+										<div class="float-left advance-search">
+											<a href="javascript:" class="btn btn-outline-danger waves-effect waves-light" data-toggle="modal" data-target="#search-model">高级搜索</a>
+										</div>
+									</div>
+								</div>
+								<div id="article_load" class="loading d-flex justify-content-center align-items-center d-none" style="min-height: 300px;">
+										<div class="spinner-border text-danger m-2" role="status"></div>
+										<h5>loading…</h5>
+								</div>
+								<ul id="article_list" class="article-list d-none">
+								</ul>
+								<ul id="article_page" class="pages pagination">
+									
+								</ul>
+							</div>
+						</div>
+					</div>
+				</div>
+
+			</div> <!-- container -->
+
+		</div> <!-- content -->
+
+		<!-- 高级搜索弹框 -->
+		<div class="modal fade" id="search-model" tabindex="-1" role="dialog" aria-hidden="true">
+			<div class="modal-dialog modal-xl modal-dialog-centered">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h4 class="modal-title" id="myCenterModalLabel">高级搜索</h4>
+						<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+					</div>
+					<div class="modal-body">
+						<div class="px-2 form-horizontal">
+							<div class="search-input">
+								<div class="form-group row">
+									<label for="keywords" class="text-right col-3 col-form-label">关键词：</label>
+									<div class="col-9">
+										<input id="keywords" class="form-control" type="text" placeholder="请输入关键词">
+									</div>
+								</div>
+								<!-- <div class="form-group row">
+									<label for="keywords-debar" class="text-right col-3 col-form-label">不搜索以下关键词：</label>
+									<div class="col-9"><input class="form-control" type="text" id="keywords-debar" placeholder="请输入排除的关键词"></div>
+								</div> -->
+							</div>
+
+							<div class="search-input">
+								<div class="form-group row">
+									<label class="text-right col-3 col-form-label">搜索栏目：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block">
+												<input id="subject-all" name="subject" type="radio" class="subject" value="all" checked>
+												<label for="subject-all">不限</label>
+											</div>
+											<div class="search-block">
+												<input id="subject-xntz" name="subject" type="radio" class="subject" value="xntz">
+												<label for="subject-xntz">学校通知</label>
+											</div>
+											<div class="search-block">
+												<input id="subject-bctz" name="subject" type="radio" class="subject" value="bctz">
+												<label for="subject-bctz">部处通知</label>
+											</div>
+											<div class="search-block">
+												<input id="subject-xxgw" name="subject" type="radio" class="subject" value="xxgw">
+												<label for="subject-xxgw">学校公文</label>
+											</div>
+											<div class="search-block">
+												<input id="subject-xxgg" name="subject" type="radio" class="subject" value="xxgg">
+												<label for="subject-xxgg">学校公告</label>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div id="xxgw_type" class="search-input">
+								<div class="form-group row">
+									<label class="text-right col-3 col-form-label">公文类型：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block">
+												<input id="doc-all" type="radio" name="filetype" value="" class="filetype" checked>
+												<label for="doc-all">全部</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-party" type="radio" name="filetype" value="华师党委" class="filetype">
+												<label for="doc-party">华师党委</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-school" type="radio" name="filetype" value="华师" class="filetype">
+												<label for="doc-school">华师</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-cadre" type="radio" name="filetype" value="华师干字" class="filetype">
+												<label for="doc-cadre">华师干字</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-office" type="radio" name="filetype" value="华师办" class="filetype">
+												<label for="doc-office">华师办</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-discipline" type="radio" name="filetype" value="华师纪委" class="filetype">
+												<label for="doc-discipline">华师纪委</label>
+											</div>
+											<div class="search-block">
+												<input id="doc-other" type="radio" name="filetype" value="其他" class="filetype">
+												<label for="doc-other">其他</label>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="search-input">
+								<div class="form-group row">
+									<label class="text-right col-3 col-form-label">搜索位置：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block">
+												<input id="keytype-all" type="radio" name="column" class="keyname" value="all" checked>
+												<label for="keytype-all">不限</label>
+											</div>
+											<div class="search-block">
+												<input id="keytype-title" type="radio" name="column" class="keyname" value="title">
+												<label for="keytype-title">文章标题</label>
+											</div>
+											<div class="search-block">
+												<input id="keytype-content" type="radio" name="column" class="keyname" value="content">
+												<label for="keytype-content">文章内容</label>
+											</div>
+											<!-- 
+											<div class="search-block">
+												<input id="keytype-author" type="radio" name="column" class="keyname" value="author">
+												<label for="keytype-author">发布部门</label>
+											</div>
+											 -->
+											<div class="search-block">
+												<input id="keytype-fileno" type="radio" name="column" class="keyname" value="fileNo">
+												<label for="keytype-fileno">公文文号</label>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="search-input">
+								<div class="form-group row">
+									<label class="text-right col-3 col-form-label">搜索校区：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block">
+												<input type="radio" id="campus-all" name="campus" value="-1" class="campus" checked>
+												<label for="campus-all">不限</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="campus-sp" name="campus" value="0" class="campus">
+												<label for="campus-sp">石牌校园</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="campus-dxc" name="campus" value="1" class="campus">
+												<label for="campus-dxc">大学城校园</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="campus-nh" name="campus" value="2" class="campus">
+												<label for="campus-nh">南海校园</label>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="search-input">
+								<!-- <div class="form-group row">
+									<label class="text-right col-3 col-form-label">排序方式：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block"><input type="radio" name="listorder" id="order-smart" value="order-smart" checked=""><label for="order-smart">智能排序</label></div>
+											<div class="search-block"><input type="radio" name="listorder" id="order-time" value="order-time"><label for="order-time">时间排序</label></div>
+										</div>
+									</div>
+								</div> -->
+								<div class="form-group row">
+									<label class="text-right col-3 col-form-label">时间范围：</label>
+									<div class="col-9 col-form-label">
+										<div class="radio radio-danger">
+											<div class="search-block">
+												<input type="radio" id="range-all" name="range" value="0" class="timetype" checked>
+												<label for="range-all">不限</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="range-week" name="range" value="7" class="timetype">
+												<label for="range-week">最近一周</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="range-month" name="range" value="30" class="timetype">
+												<label for="range-month">最近一月</label>
+											</div>
+											<div class="search-block">
+												<input type="radio" id="range-year" name="range" value="365" class="timetype">
+												<label for="range-year">最近一年</label>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="form-group text-right">
+								<button class="btn btn-secondary waves-effect" data-dismiss="modal">取消</button>
+								<button onclick="searchAdvanced()" type="submit" data-dismiss="modal"
+									class="btn btn-danger waves-effect waves-light" >搜索</button>
+							</div>
+						</div>
+					</div>
+				</div><!-- /.modal-content -->
+			</div><!-- /.modal-dialog -->
+		</div><!-- /.modal -->		
+<!-- aihelpers icon -->
+		<div class="aihubicon" style="display: none;">
+			<a href="../openapi/fastlogin.html?app_id=230" target="_blank">AI</a>
+		</div>
+		<!-- Footer Start -->
+		<footer id="footer" class="footer main-footer">
+			<div class="footer-info">
+				<div class="container-fluid">
+					<div class="row">
+						<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
+							<p><img src="../static/fullscreen/images/title-logo-full.png" alt=""></p>
+							<p class="footer-info-text">华南师范大学综合服务平台，是华南师范大学信息化基础平台之一。综合服务平台致力打造一个校内一站式服务平台，为全校师生提供便捷的信息化服务。</p>
+						</div>
+						<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
+							<div class="footer-info-title">相关链接</div>
+							<ul class="footer-info-links">
+								<li><a href="https://www.scnu.edu.cn/" target="_blank">华南师范大学</a></li>
+								<li><a href="../openapi/onekeyapp.html?app_id=103" target="_blank">网上办事大厅</a></li>
+								<li><a href="../openapi/onekeyapp.html?app_id=74" target="_blank">会议服务系统</a></li>
+								<li><a href="../openapi/onekeyapp.html?app_id=92" target="_blank">组织架构平台</a></li>
+								<li><a href="../openapi/onekeyapp.html?app_id=62" target="_blank">正版软件平台</a></li>
+								<li><a href="https://mail.scnu.edu.cn/" target="_blank">华师企业邮箱</a></li>
+								<li><a href="http://faculty.scnu.edu.cn/" target="_blank">教师个人主页</a></li>
+								<li><a href="../openapi/onekeyapp.html?app_id=61" target="_blank">砺儒云课堂</a></li>
+							</ul>
+						</div>
+						<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
+							<div class="footer-info-title">新媒体链接</div>
+							<div class="footer-info-icons">
+								<ul>
+									<li class="wecom">
+										<a href="javascript:showMedia('wechatqy');">
+											<i></i>
+											<p>企业微信</p>
+										</a>
+									</li>
+									<li class="wechat">
+										<a href="javascript:" id="wechatcode" data-toggle="tooltip" data-placement="top" data-trigger="focus">
+											<i></i>
+											<p>微信公众号</p>
+										</a>
+									</li>
+									<li class="miniprogram">
+										<a href="javascript:" id="miniprogramcode" data-toggle="tooltip" data-placement="top" data-trigger="focus">
+											<i></i>
+											<p>小程序</p>
+										</a>
+									</li>
+									<li class="weibo">
+										<a href="javascript:showMedia('weibo');">
+											<i></i>
+											<p>微博</p>
+										</a>
+									</li>
+								</ul>
+							</div>
+						</div>
+						<!--
+						<div class="col-lg-3 col-md-3 col-sm-4 col-xs-12">
+							<div class="footer-info-title">新媒体链接</div>
+							<div class="footer-info-icons">
+								<ul>
+									<li class="wecom">
+										<a href="javascript:showMedia('wechatqy');">
+											<i></i>
+											<p>企业微信</p>
+										</a>
+									</li>
+									<li class="wechat">
+										<a href="javascript:showMedia('wechatmp');">
+											<i></i>
+											<p>微信公众号</p>
+										</a>
+									</li>
+									<li class="weibo">
+										<a href="javascript:showMedia('weibo');">
+											<i></i>
+											<p>微博</p>
+										</a>
+									</li>
+								</ul>
+							</div>
+						</div>
+						-->
+					</div>
+				</div>
+			</div>
+			<div class="copyright">
+				<div class="container-fluid">
+					<div class="row">
+						<div class="col-md-12 text-center">
+							华南师范大学 版权所有 粤ICP备05008875号 | Copyright © <script>document.write((new Date()).getFullYear())</script> South China Normal University. All Rights Reserved
+						</div>
+					</div>
+				</div>
+			</div>
+		</footer>
+		<!-- end Footer -->
+		<!-- media show start -->
+		<div class="modal fade" id="media-model" tabindex="-1" role="dialog" aria-hidden="true">
+			<div class="modal-dialog modal-xl modal-dialog-centered">
+				<div class="modal-content">
+					<iframe id="media-wechatqy" class="new-media d-none" 
+						src="https://sso.scnu.edu.cn/preview/onlinePreview?url=aHR0cHM6Ly9zc28uc2NudS5lZHUuY24vQWNjb3VudFNlcnZpY2UvcmVzb3VyY2UvZmlsZXMvam9pbndlY29tXzIwMjQwODIyLnBkZg%3D%3D">
+					</iframe>
+					<img id="media-wechatmp" class="new-media d-none" src="../static/fullscreen/images/scnump.jpg"/>
+					<iframe id="media-weibo" class="new-media d-none" src="">
+					</iframe>
+				</div>
+			</div>
+		</div>
+		<!-- media show start -->
+		<script>
+		function showMedia(mediaType){
+			if(mediaType!=undefined){
+				$(".new-media").addClass("d-none");
+				if(mediaType=="weibo"){
+					$("#media-weibo").attr("src","https://widget.weibo.com/weiboshow/index.php?width=0&height=550&ptype=1&speed=0&skin=1&isTitle=0&noborder=1&isWeibo=1&isFans=0&uid=5338220864&verifier=0f9bddb0&dpc=1");
+				}
+				/*
+				if(mediaType=="wechatqy"){
+					$("#test-btn").show();
+				}else{
+					$("#test-btn").hide();
+				}*/
+				$("#media-"+mediaType).removeClass("d-none");
+				$("#media-model").modal();
+			}
+		}
+		function selectTest(){
+			$("#media-wechatqy").contents().find("#scaleSelect").val("page-width");
+			$("#media-wechatqy").contents().find("#scaleSelect").trigger("keydown");
+		}
+		</script>
+			</div>
+
+	<!-- ============================================================== -->
+	<!-- End Page content -->
+	<!-- ============================================================== -->
+
+
+</div>
+<!-- END wrapper -->
+
+
+<!-- Right Sidebar -->
+<div class="user-box right-bar">
+	<div data-simplebar class="h-100">
+
+		<!-- Nav tabs -->
+		<ul class="nav nav-tabs nav-bordered nav-justified" role="tablist">
+
+			<li class="nav-item">
+				<a class="nav-link active" data-toggle="tab" href="#tasks-tab" role="tab">
+					用户信息 <span>User Info</span>
+				</a>
+			</li>
+		</ul>
+
+		<!-- Tab panes -->
+		<div class="tab-content">
+			<div class="tab-pane active" id="tasks-tab" role="tabpanel">
+				<h6 class="user-title font-weight-medium p-3 m-0 text-uppercase">我的账号</h6>
+				<div class="px-2 fix user-content">
+					<div class="user-info p-2 fix">
+						<img id="right_bar_usericon" src="../file/images/userPhoto/default.jpg" class ="float-left img-fluid avatar-lg rounded mr-2" alt="">
+						<div class="float-left">
+							<p id="right_bar_truename" class="user-info-name">loading…</p>
+							<p id="right_bar_username" class="user-info-cardnumber">loading…</p>
+							<p class="user-info-cardnumber">
+								<a href="javascript:getSwitchList();">切换账号</a>
+							</p>
+						</div>
+					</div>
+					<div class="user-detail pt-2 px-2">
+						<p><i class="fas fa-building"></i> 单位：<span id="right_bar_deptname">loading…</span></p>
+						<p><i class="fas fa-user"></i> 类型：<span id="right_bar_kindname">loading…</span></p>
+						<p><i class="fas fa-mobile-alt"></i> 手机：<span id="right_bar_mobile">loading…</span></p>
+						<p><i class="fas fa-mail-bulk"></i> 邮箱：<span id="right_bar_email">loading…</span></p>
+					</div>
+					<div class="user-option p-2">
+						<a href="../user/detail.html" class="btn btn-danger waves-effect waves-light">
+							<p>账号管理</p>
+							<p>Member Setting</p>
+						</a>
+						<a href="../user/logout.html" class="btn btn-outline-danger waves-effect waves-light">
+							<p>退出登录</p>
+							<p>Log Out</p>
+						</a>
+					</div>
+
+				</div>
+
+				<h6 class="user-title font-weight-medium px-3 pb-2 mb-0 mt-4 text-uppercase">校园网账户</h6>
+				<div class="px-2 fix user-content">
+					<div id="right_bar_network" class="user-scnunet p-2">
+						<p>
+							余额：
+							<span class="remainder">加载中…</span>
+							<a class="recharge btn btn-outline-danger btn-rounded waves-effect waves-light float-right" href="">¥ 充值</a>
+						</p>
+						<p>启用状态：<span>加载中…</span></p>
+					</div>
+				</div>
+
+			</div>
+			<!-- 
+			<a href="../user/view_version_set.html?view_version=0" class="switch-ver" 
+					style="background: #0f7ebf;color: #ffffff;">
+				<i class="fas fa-exchange-alt"></i> 回到旧版
+			</a> 
+			-->
+		</div>
+	</div> <!-- end slimscroll-menu-->
+</div>
+<!-- /Right-bar -->
+<!-- 切换账号弹框 -->
+		<div class="modal fade" id="switch-user-modal" tabindex="-1" role="dialog" aria-hidden="true">
+			<div class="modal-dialog modal-xl modal-dialog-centered">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h4 id="attachment-name" class="modal-title" id="myCenterModalLabel">账号列表</h4>
+						<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+					</div>
+					<div class="modal-body">
+						<ul id="switch-user-list" class="switch-user-list">
+							<!-- 
+							<li class="col-xs-12 col-md-4 col-lg-3">
+								<div class="active">
+									<p>
+										<button type="button" class="btn btn-danger" disabled>当前账号</button>
+									</p>
+									<p>
+										<label>用户账号：</label>
+										<span>20238088</span>
+									</p>
+									<p>
+										<label>用户姓名：</label>
+										<span>张三</span>
+									</p>
+									<p>
+										<label>所在单位：</label>
+										<span>网络中心</span>
+									</p>
+									<p>
+										<label>账号类型：</label>
+										<span>教职工</span>
+									</p>
+								</div>
+							</li>
+							<li class="col-xs-12 col-md-4 col-lg-3">
+								<div>
+									<p>
+										<button type="button" class="btn btn-danger">点击切换</button>
+									</p>
+									<p>
+										<label>用户账号：</label>
+										<span>20238088</span>
+									</p>
+									<p>
+										<label>用户姓名：</label>
+										<span>张三</span>
+									</p>
+									<p>
+										<label>所在单位：</label>
+										<span>网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心网络中心</span>
+									</p>
+									<p>
+										<label>账号类型：</label>
+										<span>教职工</span>
+									</p>
+								</div>
+							</li>
+							<li class="col-xs-12 col-md-4 col-lg-3">
+								<div>
+									<p>
+										<button type="button" class="btn btn-danger">点击切换</button>
+									</p>
+									<p>
+										<label>用户账号：</label>
+										<span>20238088</span>
+									</p>
+									<p>
+										<label>用户姓名：</label>
+										<span>张三</span>
+									</p>
+									<p>
+										<label>所在单位：</label>
+										<span>网络中心</span>
+									</p>
+									<p>
+										<label>账号类型：</label>
+										<span>教职工</span>
+									</p>
+								</div>
+							</li>
+							<li class="col-xs-12 col-md-4 col-lg-3">
+								<div>
+									<p>
+										<button type="button" class="btn btn-danger">点击切换</button>
+									</p>
+									<p>
+										<label>用户账号：</label>
+										<span>20238088</span>
+									</p>
+									<p>
+										<label>用户姓名：</label>
+										<span>张三</span>
+									</p>
+									<p>
+										<label>所在单位：</label>
+										<span>网络中心</span>
+									</p>
+									<p>
+										<label>账号类型：</label>
+										<span>教职工</span>
+									</p>
+								</div>
+							</li>
+							 -->
+						</ul>
+					</div>
+				</div><!-- /.modal-content -->
+			</div><!-- /.modal-dialog -->
+		</div><!-- /.modal -->
+<!-- Right bar overlay-->
+<div class="rightbar-overlay"></div>
+	<!-- Vendor js -->
+	<script src="/AccountService/static/plugins/assets/js/vendor.min.js"></script>
+	<!-- App js -->
+	<script src="/AccountService/static/plugins/assets/js/app.min.js"></script>
+	<!-- My script -->
+	<!-- <script src="/AccountService/static/fullscreen/js/initialization.js?ver=2"></script> -->
+	<script src="/AccountService/static/fullscreen/js/script.js?ver=20240419001"></script>
+	<!-- My script -->
+	<script src="/AccountService/static/plugins/wechat/js/jweixin-1.6.0.js"></script>
+	<!-- My script -->
+	<script src="/AccountService/static/plugins/marked.min.js"></script>
+	<!-- My script -->
+	<script src="/AccountService/static/plugins/base64.min.js"></script>
+	<script>
+	//页脚图标
+	$(function() {
+			$('#wechatcode').popover({
+				container: ".footer-info-icons .wechat",
+				content: "<img class='codeimg' src='../static/fullscreen/images/scnuwx.jpg'>",
+				html: true,
+			});
+			$('#miniprogramcode').popover({
+				container: ".footer-info-icons .miniprogram",
+				content: "<img class='codeimg' src='../static/fullscreen/images/scnuminiapp.jpg'>",
+				html: true,
+			});
+			$.post("/AccountService/user/info.html",{},function(data){
+				var code=data.msgcode;
+				if(code==0){
+					$("#top_bar_truename,#right_bar_truename").text(data.name);
+					$("#current_user_name").val(data.account);
+					$("#right_bar_username").text(data.account);
+					$("#right_bar_deptname").text(data.dept);
+					$("#right_bar_kindname").text(data.kindName);
+					$("#right_bar_mobile").text(data.phone);
+					$("#right_bar_email").text(data.account+"@m.scnu.edu.cn");
+					$("#top_bar_usericon,#right_bar_usericon").attr("src","../resource/photo.jpg?ver="+data.account);
+					if($(".msg_new")!=undefined){
+						$(".msg_new").text(data.msgCount);
+					}
+					//if($("#detail-photo11").text()!=""){
+						$("#detail-photo").attr("src","../resource/photo.jpg?ver="+data.account);
+						$("#detail-username").text(data.account);
+						$("#detail-truename").text(data.name);
+						$("#detail-deptname").text(data.dept);
+						$("#detail-mobile").text(data.phone);
+						$("#detail-email").text(data.account+"@m.scnu.edu.cn");
+						$("#detail-o365").text(data.account+"@msad.scnu.edu.cn");
+					//}
+				}
+			},"json");
+			$.post("/AccountService/user/getusernetdata.html",{},function(data){
+				if(data.msgcode==0){
+					var list=data.list;
+					var html="";
+					for(var i=0;i<list.length;i++){
+						var temp=list[i];
+						if(temp.name=='账户余额'){
+							html+="<p>"+temp.name+"：<span class='remainder'>￥"+temp.value+".00</span><a href='../openapi/onekeyapp.html?app_id=31&key_name=forward&key_data=..%2flog%2forderlog.html'class='recharge btn btn-outline-danger btn-rounded waves-effect waves-light float-right' href=''>¥ 充值</a></p>";
+						}else{
+							html+="<p>"+temp.name+"：<span>"+temp.value+"</span></p>";
+						}
+					}
+					$("#right_bar_network").html(html);
+				}
+			},"json");
+			$(".tools").click(function(){
+				var i = $(this).attr("id");
+				if(i == "t-hide") {
+					console.log(i);
+					$(this).attr("id","t-show");
+					/* $(this).css("right","150px"); */
+					$(this).addClass("open");
+					$(".tools-menu").show();
+				} else if(i == "t-show") {
+					console.log(i);
+					$(this).attr("id","t-hide");
+					/* $(this).css("right","0"); */
+					$(this).removeClass("open");
+					$(".tools-menu").hide();
+				}
+			});
+			var url = window.location.href;
+			var length = url.indexOf("?");
+			var pageNameIndex = url.lastIndexOf("/") + 1;
+			if (length == -1) {
+				length = url.length;
+			}
+			url = url.substring(0, length);
+			var pageName = url.substring(pageNameIndex, length);
+			if (url.endsWith("upphoto.html") || url.endsWith("password.html")
+					|| url.endsWith("bind.html")
+					|| url.endsWith("upecardphoto.html")
+					|| url.endsWith("otp.html")
+					|| url.endsWith("loginlog.html")
+					|| url.endsWith("actionlog.html")
+					|| url.endsWith("wechat_qy.html")
+					|| url.endsWith("otherlogin.html")
+					|| url.endsWith("entrance_bind.html")
+					|| url.endsWith("detail.html")
+					|| url.endsWith("wechat_applet.html")) {
+				if (url.endsWith("detail.html")) {
+					$("#detail").addClass("current");
+				} else if (url.endsWith("upphoto.html")) {
+					$("#upphoto").addClass("current");
+				} else if (url.endsWith("password.html")) {
+					$("#password").addClass("current");
+				} else if (url.endsWith("user/bind.html")
+						|| url.endsWith("user/unbind.html")) {
+					$("#bind").addClass("current");
+				} else if (url.endsWith("otp.html")) {
+					$("#otp").addClass("current");
+				} else if (url.endsWith("wechat_qy.html")) {
+					$("#wecom").addClass("current");
+				} else if (url.endsWith("upecardphoto.html")) {
+					$("#upecardphoto").addClass("current");
+				} else if (url.endsWith("loginlog.html")) {
+					$("#loginlog").addClass("current");
+				} else if (url.endsWith("actionlog.html")) {
+					$("#actionlog").addClass("current");
+				} else if (url.endsWith("otherlogin.html")
+						|| url.endsWith("entrance_bind.html")) {
+					$("#authbind").addClass("current");
+				}else if (url.endsWith("wechat_applet.html")) {
+					$("#weapp").addClass("current");
+				}
+			} else if (url.endsWith("email.html")) {
+				$("#email").addClass("current");
+			} else if (url.endsWith("index.html")) {
+				$("#menu_index").addClass("current");
+			} else if (url.endsWith("articlelist.html")
+					|| pageName.startsWith("a_") || pageName.startsWith("w_")) {
+				$("#menu_article").addClass("current");
+			} else if (url.endsWith("applist.html")) {
+				$("#menu_app").addClass("current");
+			} else if (url.endsWith("getCalendarData.html")
+					|| url.endsWith("getCalendarDataDetail.html")) {
+				$("#menu_calendar").addClass("current");
+			} else if (url.endsWith("subscribe/list.html")
+					|| url.endsWith("subscribe/subject.html")) {
+				$("#menu_subscribe").addClass("current");
+			} else if (url.endsWith("fido/list.html")) {
+				$("#webauthn").addClass("current");
+			}
+			//根据页面宽度调整账号管理菜单样式
+			var userMemuHtml=$("#user-memu-list").html();
+			if(userMemuHtml!=undefined){
+				var bodyWidth=$("body").width();
+				console.log("bodyWidth:"+bodyWidth);
+				if(bodyWidth<=992){
+					const memuHeight=$("#user-memu-list").height();
+					$("#user-memu-list").attr("max-height",memuHeight);
+					$("#user-memu-list").css("overflow","hidden");
+					$("#user-memu-ocbtn").show();	
+					$("#user-memu-list").height(0);			
+				}
+			}
+		});
+		function openOrCloseUserMemu(){
+			const memuHeight=$("#user-memu-list").height();
+			if(memuHeight==0){
+				const memuMaxHeight=$("#user-memu-list").attr("max-height");
+				$("#user-memu-list").animate({"height":memuMaxHeight+"px"});
+				$("#user-memu-ocbtn a").text("收起菜单");
+			}else{
+				$("#user-memu-list").animate({"height":"0px"});
+				$("#user-memu-ocbtn a").text("展开菜单");
+			}
+		}
+		function getSwitchList(){
+			var userListSize=$("#switch-user-list").children("li").length;
+			if(userListSize==0){
+				$.post("/AccountService/user/switch_list.html",{},function(data){
+					if(data.msgcode==0){
+						var switchUserListHtml="";
+						var list=data.list;
+						if(list!=undefined && list!=null && list.length>0){
+							for(var i=0;i<list.length;i++){
+								switchUserListHtml+="<li class=\"col-xs-12 col-md-4 col-lg-3\">";
+								if(list[i].current==1){
+									switchUserListHtml+="<div class=\"active\">"
+												  +"<p>"
+												  +"<button type=\"button\" class=\"btn btn-danger\" onclick=\"javascript:;\" disabled>当前账号</button>"
+												  +"</p>";
+								}else{
+									switchUserListHtml+="<div>"
+												  +"<p>"
+												  +"<button type=\"button\" class=\"btn btn-danger\" onclick=\"javascript:switchUser("+list[i].id+");\">点击切换</button>"
+												  +"</p>";
+								}
+								switchUserListHtml+="<p>"
+												  +"<label>用户账号：</label>"
+												  +"<span>"+list[i].userName+"</span>"
+												  +"</p>"
+												  +"<p>"
+												  +"<label>用户姓名：</label>"
+												  +"<span>"+list[i].trueName+"</span>"
+												  +"</p>"
+												  +"<p>"
+												  +"<label>身份类型：</label>"
+												  +"<span>"+list[i].kindName+"</span>"
+												  +"</p>"
+												  +"<p>"
+												  +"<label>所在单位：</label>"
+												  +"<span>"+list[i].deptName+"</span>"
+												  +"</p>"
+												  +"</div>"
+												  +"</li>";
+							}
+							$("#switch-user-list").html(switchUserListHtml);
+							$("body").removeClass("right-bar-enabled");
+							$("#switch-user-modal").modal();
+						}else{
+							alert("没有可切换的账号");
+						}
+					}else{
+						alert(data.msgtext);
+					}
+				},"json");
+			}else{
+				$("body").removeClass("right-bar-enabled");
+				$("#switch-user-modal").modal();
+			}
+		}
+		function switchUser(id){
+			if(id!=undefined){
+				var isConfirm=window.confirm("确定要切换账号吗？");
+				if(isConfirm){
+					window.location.href="/AccountService/user/switch.html?id="+id;
+				}
+			}
+		}
+		
+	$(function(){
+		loadingTips();
+	});
+	
+	function loadingTips(){
+		getExmail();
+		getScnuMail();
+		getCalendar();
+		//setTimeout(loadingTips,120000);
+	}
+		
+	/*读取M邮箱未读邮件数量*/
+	function getExmail(){
+				$.post("../user/index_exmail.html",{},function(data,status){
+			var code=data.msgcode;
+			if(code==0){
+				var nmail=data.newmail;
+				$(".mail_new").text(nmail);
+				$("#exmail_total").val(nmail);
+			}else{
+				$("#exmail_total").val(0);
+			}
+			getEmailTotal();
+		},"json");
+	}
+	/*读取华师邮箱未读邮件数量*/
+	function getScnuMail(){
+	}
+	function getEmailTotal(){
+		var exmailTotal=parseInt($("#exmail_total").val());
+		var scnuMailTtaol=parseInt($("#scnumail_total").val());
+		if(scnuMailTtaol+exmailTotal>0){
+			$(".email-total").text(scnuMailTtaol+exmailTotal);
+			$(".email-total").show();
+		}else{
+			$(".email-total").hide();
+		}
+	}
+	
+	
+	/*获取今日日程数量*/
+	function getCalendar(){
+		$.post("../user/index_calendar.html",{},function(data){
+			var code=data.msgcode;
+			if(code==0){			
+				var todo=data.todo;
+				if(todo>0){
+					$(".calendar_today").text(todo);
+					$(".calendar_today").show();
+				}else{
+					$(".calendar_today").hide();
+				}
+			}
+		},"json");
+	}
+	</script>
+<script>
+	$(function(){
+		var subject="xntz";	
+		$("#xntz").removeClass("current");
+		$("#bctz").removeClass("current");
+		$("#xxgw").removeClass("current");	
+		$("#xxgg").removeClass("current");
+		$("#"+subject).addClass("current");	
+		$(".subject").prop("checked",false);
+		//$("#subject-"+subject).prop("checked",true);
+		$("#subject-all").prop("checked",true);
+		if(subject=="xxgw"){
+			$("#xxgw_type").show();
+		}else{
+			$("#xxgw_type").hide();
+		}
+		$(".subject").click(function(){
+			var checked=$(this).prop("checked");
+			if(checked){
+				var checkedSubject=$(this).val();
+				$("#search_subject").val(checkedSubject);
+				$("#subject-fast").val(checkedSubject);
+				if(checkedSubject=="xxgw"){
+					$("#xxgw_type").fadeIn(600);
+				}else{
+					$("#xxgw_type").fadeOut(400);
+					$("#search_filetype").val("");
+					$(".filetype").prop("checked",false);
+					$("#doc-all").prop("checked",true);
+				}
+			}
+		});
+		$(".filetype").click(function(){
+			var checked=$(this).prop("checked");
+			if(checked){
+				var filetype=$(this).val();
+				$("#search_filetype").val(filetype);
+			}
+		});
+		$(".keyname").prop("checked",false);
+		$("#keytype-title").prop("checked",true);
+		$(".keyname").click(function(){
+			var checked=$(this).prop("checked");
+			if(checked){
+				var keyname=$(this).val();
+				$("#search_keyname").val(keyname);
+			}
+		});
+		$(".campus").click(function(){
+			var checked=$(this).prop("checked");
+			if(checked){
+				var campus=$(this).val();
+				$("#search_campus").val(campus);
+			}
+		});
+		$(".timetype").click(function(){
+			var checked=$(this).prop("checked");
+			if(checked){
+				var timetype=$(this).val();
+				$("#search_timetype").val(timetype);
+			}
+		});
+		$(".fast-xxgw-type").click(function(){
+			$(".fast-xxgw-type").removeClass("current");
+			$(this).addClass("current");
+			var text=$(this).text();
+			console.log(text);
+			if(text=="所有公文"){
+				$("#search_filetype").val("");
+				$("#search_sec_subject").val("");
+			}else if(text=="规章制度"){
+				$("#search_sec_subject").val("gzzd");
+				$("#search_filetype").val("");
+			}else if(text=="会议纪要"){
+				$("#search_sec_subject").val("hyjy");
+				$("#search_filetype").val("");
+			}else{
+				$("#search_filetype").val(text);
+				$("#search_sec_subject").val("");
+			}
+			searchArticlePage(1,20,"xxgw");
+		});
+		var lastPage=getCookie('article_page');
+		var lastSubject=getCookie('article_subject');
+		var page=1;
+		if(lastSubject!=undefined && subject==lastSubject){
+			page=lastPage;
+		}
+		searchArticlePage(1,20,subject);
+	});
+	function search(){
+		$("#search_keyname").val("title");
+		searchArticlePage(1,20);
+	}
+	function searchAdvanced(){
+		var keyword=$("#keywords").val();
+		$("#search_keydata").val(keyword);
+		searchArticlePage(1,20);
+	}
+	function searchByAuthor(author,subject){
+		if(author!=undefined && subject!=undefined){
+			if(subject!='xxgw'){
+				/*
+				$(".keyname").prop("checked",false);
+				$("#keytype-author").prop("checked",true);
+				$("#search_keyname").val('author');
+				$("#search_keydata").val(author);
+				*/
+				$("#search_dept").val(author);
+				searchArticlePage(1,20);
+			}
+		}
+	}
+	function changeSubjectFast(){
+		var checkedSubject=$("#subject-fast").val();
+		$("#search_subject").val(checkedSubject);
+		if(checkedSubject=="xxgw"){
+			$("#xxgw_type").fadeIn(600);
+		}else{
+			$("#xxgw_type").fadeOut(400);
+			$("#search_filetype").val("");
+			$(".filetype").prop("checked",false);
+			$("#doc-all").prop("checked",true);
+		}
+		$(".subject").prop("checked",false);
+		$("#subject-"+checkedSubject).prop("checked",true);
+	}
+	function searchArticlePage(page,size,subject){
+		if(subject==undefined){
+			subject=$("#search_subject").val();
+		}
+		var secSubject=$("#search_sec_subject").val();
+		var key_name=$("#search_keyname").val();
+		var key_data=$("#search_keydata").val();
+		var dept_name=$("#search_dept").val();
+		var campus=$("#search_campus").val();
+		var time_long=$("#search_timetype").val();
+		var file_type=$("#search_filetype").val();
+		var params={subject:subject,key_name:key_name};
+		if(secSubject!=""){
+			params.sub_subject=secSubject;
+		}
+		if(key_data!=undefined && key_data!=''){
+			params.key_data=key_data;
+		}
+		if(dept_name!=""){
+			params.dept_name=dept_name;
+		}
+		if(file_type!=""){
+			params.file_type=file_type;
+		}
+		if(campus!='-1'){
+			params.campus=campus;
+		}
+		if(time_long>0){
+			params.time_long=time_long;
+		}
+		if(page==undefined || page<1){
+			params.page=1;
+		}else{
+			params.page=page;
+		}
+		if(size==undefined || size<1){
+			params.size=20;
+		}else{
+			params.size=size;
+		}		
+		var html="";
+		if(subject=="xntz"){
+			$("#article_subject").text("学校通知");	
+		}else if(subject=="bctz"){
+			$("#article_subject").text("部处通知");
+		}else if(subject=="xxgw"){
+			$("#article_subject").text("校内发文");
+		}else if(subject=="xxgg"){
+			$("#article_subject").text("学校公告");
+		}else{
+			$("#article_subject").text("搜索结果");
+		}
+		if(subject!="xxgw"){
+			$("#article_file_type").remove();	
+		}
+		$("#articlelistdiv").html(html);
+		$("#article_load").removeClass("d-none");
+		$("#article_load").addClass("d-flex");
+		$("#article_list").addClass("d-none");
+		$.post("../user/article_serach.html",params,function(data){
+			var msg=data.msgcode;
+			if(msg==0){
+				var list=data.page.list;
+				var listHtml="";
+				if(list!=undefined && list!=null && list.length>0){
+					for(var i=0;i<list.length;i++){
+						var topClass="";
+						if(list[i].top==2){
+							topClass=" top";
+						}else if(list[i].top==1){
+							topClass=" new";
+						}
+						var readClass="";
+						if(list[i].isRead==0){
+							readClass=" class='unread'";
+						}
+						listHtml+="<li class='row"+topClass+"'>"
+								+"<div class='col-md-7 posttitle'>"
+								+"<a href='../article/a_"+list[i].subject+"_"+list[i].articleId+"_"+list[i].isRead+".html'"+readClass+" title='"+list[i].title+"'>"+list[i].title;
+						if(list[i].attachments!=undefined && list[i].attachments>0){
+							listHtml+="<i class='fa fa-file' style='padding-left: 10px;color: #dc424f;'> "+list[i].attachments+"</i>";
+						}
+						listHtml+="</a></div>";
+						if(list[i].subject!='xxgw'){
+							listHtml+="<div class='col-12 col-sm-8 col-md-3 text-muted postdept'>"
+									+"<a href=\"javascript:searchByAuthor('"+list[i].fileNo+"','"+subject+"');\" style=\"padding-left: 0;\">"
+									+"<i class=\"fa fa-search\" style=\"margin-right:5px;\"></i>"+list[i].fileNo+"</a></div>";
+						}else{
+							listHtml+="<div class='col-12 col-sm-8 col-md-3 text-muted postdept'>"
+								+"<a href=\"javascript:;\" style=\"padding-left: 0;\">"+list[i].fileNo+"</a></div>";
+						}
+						listHtml+="<div class='col-12 col-sm-4 col-md-2 text-muted posttime text-right'>"+list[i].wtime+"</div>"
+								+"</li>";
+					}
+				}else{
+					listHtml+="<li class='row'><label class='col-md-12 text-center'>没有找到相关的内容</label></li>";
+				}
+				$("#article_list").html(listHtml);	
+				$("#article_list").removeClass("d-none");
+				$("#article_load").removeClass("d-flex");
+				$("#article_load").addClass("d-none");
+			}	
+			var pageHtml="";
+			if(data.page.last!=undefined && data.page.last!=null){				
+				pageHtml+="<li class='page-item'>"
+						+"<a class='page-link' href='javascript: searchArticlePage("+data.page.last+","+size+",\""+subject+"\");' aria-label='Previous'>"
+						+"<span aria-hidden='true'>«</span>"
+						+"<span class='sr-only'>Previous</span>"
+						+"</a>"
+						+"</li>";
+				if(data.page.last>1){
+					pageHtml+="<li class='page-item'><a class='page-link' href='javascript: searchArticlePage(1,"+size+",\""+subject+"\");'>1</a></li>"
+							+"<li class='page-item'><a class='page-link' href='javascript: void(0);'>…</a></li>";
+				}
+			}
+			if(data.page.pageList.length>0){
+				for(var i=0;i<data.page.pageList.length;i++){
+					if(data.page.pageList[i]==data.page.page){
+						pageHtml+="<li class='page-item active'><a class='page-link' href='javascript: void(0);'>"+data.page.pageList[i]+"</a></li>";
+					}else{
+						pageHtml+="<li class='page-item'><a class='page-link' href='javascript: searchArticlePage("+data.page.pageList[i]+","+size+",\""+subject+"\");'>"+data.page.pageList[i]+"</a></li>";
+					}
+				}
+			}
+			if(data.page.next!=undefined && data.page.next!=null){
+				if(data.page.maxPage>data.page.next){
+					pageHtml+="<li class='page-item'><a class='page-link' href='javascript: void(0);'>…</a></li>"
+							+"<li class='page-item'><a class='page-link' href='javascript: searchArticlePage("+data.page.maxPage+","+size+",\""+subject+"\");'>"+data.page.maxPage+"</a></li>";
+				}
+				pageHtml+="<li class='page-item'>"
+						+"<a class='page-link' href='javascript: searchArticlePage("+data.page.next+","+size+",\""+subject+"\");' aria-label='Next'>"
+						+"<span aria-hidden='true'>»</span>"
+						+"<span class='sr-only'>Next</span>"
+						+"</a>"
+						+"</li>";
+			}
+			$("#article_page").html(pageHtml);
+		},'json');
+	}	
+</script>
+
+</body>
+</html>

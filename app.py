@@ -258,6 +258,24 @@ def _load_lessons_from_json(filepath, conn):
     except Exception as e:
         print(f"加载课程数据时出错: {e}")
 
+def parse_weeks(weeks_str):
+    """解析 '1-16' 或 '1,3,5-8' 为 set of int"""
+    result = set()
+    if not weeks_str:
+        return result
+    parts = weeks_str.split(',')
+    for part in parts:
+        part = part.strip()
+        if '-' in part:
+            a, b = part.split('-')
+            result.update(range(int(a), int(b) + 1))
+        else:
+            try:
+                result.add(int(part))
+            except ValueError:
+                pass
+    return result
+
 def _load_classes_from_json(filepath, conn):
     """从 class.json 加载班级数据，写入 classes / class_positions / class_stu 表"""
     try:
@@ -448,34 +466,10 @@ def _create_class_chat_rooms(conn):
 
 def _seed_data(conn):
     c = conn.cursor()
-    if c.execute('SELECT COUNT(*) FROM classrooms').fetchone()[0] == 0:
-        c.executemany('INSERT INTO classrooms VALUES (?,?,?,?,?)', [
-            ('A101','教学楼A',1,60,1), ('A102','教学楼A',1,80,0),
-            ('B201','教学楼B',2,40,1), ('B202','教学楼B',2,120,1),
-            ('C301','教学楼C',3,30,0), ('C302','教学楼C',3,50,1)
-        ])
-    if c.execute('SELECT COUNT(*) FROM course_schedule').fetchone()[0] == 0:
-        c.executemany('INSERT INTO course_schedule (course_name,teacher,classroom_id,day_of_week,start_time,end_time) VALUES (?,?,?,?,?,?)', [
-            ('高等数学','王老师','A101',1,'08:00','09:40'),
-            ('数据结构','李老师','B201',1,'10:00','11:40'),
-            ('大学英语','张老师','C301',2,'08:00','09:40'),
-            ('软件工程','赵老师','B202',3,'14:00','15:40')
-        ])
     if c.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 0:
         _load_events_from_json('events.json', conn)
         _seed_event_groups(conn)
         _create_event_chat_rooms(conn)
-    if c.execute('SELECT COUNT(*) FROM tutor_duty').fetchone()[0] == 0:
-        c.executemany('INSERT INTO tutor_duty VALUES (?,?,?,?,?,?,?,?,?)', [
-            (1,'李明','TE2023001','计算机学院','2026-05-01','08:00','12:00','教学楼A301','123456789'),
-            (2,'王芳','TE2023002','计算机学院','2026-05-01','14:00','18:00','教学楼B205','987654321')
-        ])
-    if c.execute('SELECT COUNT(*) FROM teacher_office').fetchone()[0] == 0:
-        c.executemany('INSERT INTO teacher_office VALUES (?,?,?,?,?,?)', [
-            ('TE2023001','李明','计算机学院','教授','教学楼A栋301室','123456789'),
-            ('TE2023002','王芳','计算机学院','副教授','教学楼B栋205室','987654321'),
-            ('TE2023003','张强','数学学院','讲师','教学楼C栋102室','1122334455')
-        ])
     if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
         users_data = _load_users_from_json('users.json')
         if users_data:
@@ -2642,6 +2636,21 @@ def unset_lesson_position():
     return jsonify({'message':'已取消课代表'})
 
 # ---------- 公告 ----------
+@app.route('/api/announcements/proxy')
+def announcements_proxy():
+    import urllib.request
+    target_url = 'https://sso.scnu.edu.cn/AccountService/article/articlelist.html'
+    try:
+        req = urllib.request.Request(target_url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode('utf-8', errors='replace')
+        # Inject base tag so relative CSS/JS paths resolve correctly
+        base_tag = '<base href="https://sso.scnu.edu.cn">'
+        html = html.replace('<head>', '<head>' + base_tag)
+        return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    except Exception as e:
+        return f'<html><body><h2>加载公告失败</h2><p>{e}</p></body></html>', 502, {'Content-Type': 'text/html; charset=utf-8'}
+
 @app.route('/api/announcements', methods=['GET'])
 @token_required
 def get_announcements():
@@ -3183,6 +3192,36 @@ def course_schedule():
     return jsonify([{'course_name':c['course_name'],'teacher':c['teacher'],
                      'classroom':c['classroom_id'],'day_of_week':c['day_of_week'],
                      'start_time':c['start_time'],'end_time':c['end_time']} for c in courses])
+
+@app.route('/api/courses/my-schedule', methods=['GET'])
+@token_required
+def my_course_schedule():
+    uid = g.current_user['uid']
+    week = request.args.get('week', type=int)
+    if not week:
+        from datetime import date as dt_date
+        week1 = dt_date(2026, 3, 2)
+        delta = (dt_date.today() - week1).days
+        week = max(1, min(20, delta // 7 + 1))
+    conn = get_db()
+    lessons = conn.execute('''SELECT l.* FROM lesson l
+        JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
+        WHERE ls.stu_uid=? ORDER BY l.schedule_weekday, l.schedule_period''', (uid,)).fetchall()
+    conn.close()
+    result = []
+    for l in lessons:
+        weeks_set = parse_weeks(l['schedule_weeks'])
+        result.append({
+            'lesson_id': l['lesson_id'],
+            'lesson_name': l['lesson_name'],
+            'teacher_uid': l['teacher_uid'],
+            'schedule_weekday': l['schedule_weekday'],
+            'schedule_period': l['schedule_period'],
+            'schedule_weeks': l['schedule_weeks'],
+            'location': l['location'],
+            'in_week': week in weeks_set if weeks_set else True
+        })
+    return jsonify(result)
 
 # ---------- 语音/视频通话信令 ----------
 user_heartbeats = {}  # uid -> last heartbeat timestamp

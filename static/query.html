@@ -136,6 +136,31 @@
         display: flex; align-items: center; justify-content: center;
         border-radius: 50%; color: white; font-weight: 600;
       }
+      /* Course Schedule */
+      .schedule-header { margin-bottom: 16px; cursor: pointer; user-select: none; }
+      .schedule-header h2 { font-size: 22px; color: #1e293b; display: flex; align-items: center; gap: 6px; }
+      .schedule-header .arrow { font-size: 12px; color: #94a3b8; transition: transform .2s; }
+      .schedule-header .arrow.open { transform: rotate(180deg); }
+      .schedule-header .sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+      .week-dropdown { display: none; position: absolute; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 100; max-height: 240px; overflow-y: auto; padding: 4px; min-width: 100px; }
+      .week-dropdown.show { display: block; }
+      .week-dropdown .item { padding: 6px 16px; font-size: 14px; cursor: pointer; border-radius: 6px; }
+      .week-dropdown .item:hover { background: #f1f5f9; }
+      .week-dropdown .item.active { background: #eef2ff; color: #4f46e5; font-weight: 600; }
+      .week-selector-wrap { position: relative; display: inline-block; }
+      .sched-grid { display: grid; grid-template-columns: 70px repeat(7, 1fr); gap: 1px; background: #e2e8f0; border-radius: 10px; overflow: hidden; font-size: 13px; }
+      .sched-grid .cell { background: #fff; min-height: 70px; padding: 4px; position: relative; }
+      .sched-grid .cell-header { background: #f8fafc; padding: 8px 4px; text-align: center; font-weight: 600; color: #1e293b; min-height: auto; }
+      .sched-grid .cell-header .date { font-size: 11px; font-weight: 400; color: #64748b; }
+      .sched-grid .cell-header .date.today { color: #4f46e5; font-weight: 700; }
+      .sched-grid .cell-time { background: #f8fafc; color: #64748b; font-size: 12px; text-align: center; padding: 4px; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: auto; }
+      .sched-grid .cell-time .period { font-weight: 600; color: #475569; }
+      .course-card { padding: 4px 6px; border-radius: 6px; margin-bottom: 2px; font-size: 12px; cursor: default; border-left: 3px solid rgba(0,0,0,0.15); }
+      .course-card .name { font-weight: 500; color: #1e293b; }
+      .course-card .loc { font-size: 11px; color: #64748b; }
+      .course-card.out-week { opacity: 0.4; }
+      .course-card.out-week::after { content: '非本周'; font-size: 10px; color: #94a3b8; display: block; }
+      .sched-grid .cell-empty { color: #cbd5e1; font-size: 12px; display: flex; align-items: center; justify-content: center; min-height: 70px; }
     </style>
   </head>
   <body>
@@ -303,26 +328,8 @@
           form: '<input type="date" id="rdate"><input type="time" id="rstart" value="08:00"><input type="time" id="rend" value="10:00"><button class="btn" onclick="freeRooms()">查询</button>',
         },*/
         { key: "events", label: "🎉 赛事活动", form: "" },
-        {
-          key: "tutor",
-          label: "👩‍🏫 辅导值班",
-          form: '<input type="date" id="tdate"><input id="tcollege" placeholder="学院"><button class="btn" onclick="tutorDuty()">查询</button>',
-        },
-        {
-          key: "office",
-          label: "📍 办公室",
-          form: '<input id="ocollege" placeholder="学院"><button class="btn" onclick="teacherOffice()">查询</button>',
-        },
-        {
-          key: "course",
-          label: "📅 课程安排",
-          form: '<input id="croom" placeholder="教室编号"><button class="btn" onclick="loadCourses()">查询</button>',
-        },
-        {
-          key: "announcements",
-          label: "📢 公告",
-          form: '<input id="croom" placeholder="教室编号"><button class="btn" onclick="loadCourses()">查询</button>',
-        },
+        { key: "schedule", label: "📅 课程表", form: "" },
+        { key: "announcements", label: "📢 公告", form: "" },
       ];
       function switchQuery(key) {
         document
@@ -333,7 +340,8 @@
         document.getElementById("queryMain").innerHTML =
           `<div class="query-form">${q.form}</div><div id="res"></div>`;
         if (key === "events") loadEvents();
-        if (key === "course") loadCourses();
+        if (key === "schedule") loadMySchedule();
+        if (key === "announcements") loadAnnouncements();
         if (key === "userSearch") { loadSearchOptions(); initAcPositions(); }
       }
       async function loadSearchOptions() {
@@ -414,6 +422,192 @@
             `<h4>${e.name} (${e.type})</h4><div class="info">🕒 ${e.start_time} ~ ${e.end_time}</div><div class="info">📍 ${e.location} · 👥 ${e.target}</div><div>${e.description}</div></div>`,
         );
       }
+      function loadAnnouncements() {
+        const fakeData = [
+          { subject: 'xntz', title: '关于2026年暑期放假安排的通知', dept: '党政办公室', date: '2026-06-03', top: 2 },
+          { subject: 'xntz', title: '关于开展2026届毕业生毕业典礼暨学位授予仪式的通知', dept: '学生工作部', date: '2026-06-02', top: 1 },
+          { subject: 'xntz', title: '关于2026-2027学年第一学期选课工作的通知', dept: '教务处', date: '2026-06-01' },
+          { subject: 'xntz', title: '2026年6月全国大学英语四、六级考试温馨提示', dept: '教务处', date: '2026-05-30', top: 1 },
+          { subject: 'xntz', title: '关于做好2026届毕业生档案转递工作的通知', dept: '学生工作部', date: '2026-05-28' },
+          { subject: 'bctz', title: '关于申报2026年度国家自然科学基金项目的通知', dept: '科研处', date: '2026-06-02', top: 1, att: 2 },
+          { subject: 'bctz', title: '关于2026届本科生毕业论文（设计）评优结果的公示', dept: '教务处', date: '2026-06-01', att: 1 },
+          { subject: 'bctz', title: '2026年教师教学创新大赛校赛通知', dept: '教师发展中心', date: '2026-05-29' },
+          { subject: 'xxgw', title: '华南师范大学关于表彰2025-2026学年优秀教师的决定', dept: '华南师大', date: '2026-06-01', att: 1 },
+          { subject: 'xxgw', title: '关于印发《华南师范大学本科课堂教学质量评价办法》的通知', dept: '华师', date: '2026-05-28', top: 1 },
+          { subject: 'xxgw', title: '关于调整华南师范大学实验室安全工作领导小组的通知', dept: '华师办', date: '2026-05-25' },
+          { subject: 'bctz', title: '关于开展2026年实验室安全专项检查的通知', dept: '实验室与设备管理处', date: '2026-05-27' },
+          { subject: 'bctz', title: '2026年暑期社会实践活动立项通知', dept: '校团委', date: '2026-05-22' },
+          { subject: 'xntz', title: '关于校园网出口带宽升级维护的通知', dept: '网络中心', date: '2026-05-25' },
+          { subject: 'xxgw', title: '华南师范大学关于2026年第二批报废资产处置的批复', dept: '华南师大', date: '2026-05-22' },
+          { subject: 'xxgw', title: '关于印发《华南师范大学校园交通安全管理规定》的通知', dept: '华师办', date: '2026-05-20', att: 1 },
+        ];
+        const labels = { xntz: '学校通知', bctz: '部处通知', xxgw: '学校公文' };
+        let tabHtml = Object.entries(labels).map(([k,v]) =>
+          `<span class="ann-tab" data-sub="${k}">${v}</span>`
+        ).join('');
+        const allHtml = fakeData.map(d => renderAnnItem(d)).join('');
+        document.getElementById('res').innerHTML = `
+          <style>
+            .ann-tabs { display:flex;gap:4px;margin-bottom:16px;background:#fff;border-radius:10px;padding:4px;box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+            .ann-tab { flex:1;text-align:center;padding:9px 0;border-radius:8px;cursor:pointer;color:#666;font-size:14px;font-weight:500;transition:0.2s; }
+            .ann-tab.active { background:#4f46e5;color:#fff; }
+            .ann-tab:hover:not(.active) { background:#f5f5f5; }
+            .ann-list { list-style:none; }
+            .ann-item { display:flex;flex-wrap:wrap;align-items:center;padding:13px 18px;background:#fff;border-bottom:1px solid #f0f0f0; }
+            .ann-item:first-child { border-radius:10px 10px 0 0; }
+            .ann-item:last-child { border-radius:0 0 10px 10px;border-bottom:none; }
+            .ann-item:hover { background:#fafbff; }
+            .ann-item.top { background:#fffde7; }
+            .ann-item .tt { flex:1;min-width:0;font-size:15px;color:#333;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:12px; }
+            .ann-item .tt .tag { display:inline-block;font-size:11px;padding:1px 8px;border-radius:3px;margin-left:8px;vertical-align:middle; }
+            .ann-item .tt .tag-top { background:#fef3c7;color:#d97706; }
+            .ann-item .tt .tag-new { background:#dbeafe;color:#2563eb; }
+            .ann-item .dept { width:130px;font-size:13px;color:#888;text-align:center;flex-shrink:0; }
+            .ann-item .date { width:90px;font-size:13px;color:#999;text-align:right;flex-shrink:0; }
+            .ann-item .att { color:#dc424f;margin-left:6px;font-size:12px; }
+          </style>
+          <div class="ann-tabs"><span class="ann-tab active" data-sub="all">全部公告</span>${tabHtml}</div>
+          <div class="ann-list" id="ann-list">${allHtml}</div>`;
+        document.querySelectorAll('.ann-tab').forEach(el => {
+          el.onclick = () => {
+            document.querySelectorAll('.ann-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            const sub = el.dataset.sub;
+            const filtered = sub === 'all' ? fakeData : fakeData.filter(d => d.subject === sub);
+            document.getElementById('ann-list').innerHTML = filtered.map(d => renderAnnItem(d)).join('')
+              || '<div style="text-align:center;padding:40px;color:#999;">没有找到相关的内容</div>';
+          };
+        });
+      }
+      function renderAnnItem(d) {
+        const cls = d.top === 2 ? ' top' : d.top === 1 ? ' new' : '';
+        const tag = d.top === 2 ? '<span class="tag tag-top">置顶</span>'
+          : d.top === 1 ? '<span class="tag tag-new">最新</span>' : '';
+        const att = d.att ? `<span class="att">📎${d.att}</span>` : '';
+        return `<div class="ann-item${cls}"><div class="tt">${d.title}${tag}${att}</div><div class="dept">${d.dept}</div><div class="date">${d.date}</div></div>`;
+      }
+      // --- Course Schedule ---
+      const PERIODS = [
+        { key: '1-2', label: '1-2', time: '08:30-10:00' },
+        { key: '3-4', label: '3-4', time: '10:20-11:50' },
+        { key: '5-6', label: '5-6', time: '14:30-16:00' },
+        { key: '7-8', label: '7-8', time: '16:10-17:40' },
+        { key: '9-10', label: '9-10', time: '19:00-20:30' },
+      ];
+      const WEEKDAYS = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+      const WEEKDAY_SHORT = ['一','二','三','四','五','六','日'];
+      const COURSE_COLORS = ['#dbeafe','#fef3c7','#dcfce7','#fce7f3','#e0e7ff','#fae8ff','#ede9fe','#ffedd5','#cffafe','#e5e7eb','#fef9c3','#d1fae5'];
+      function getCourseColor(name) {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + (hash << 5) - hash;
+        return COURSE_COLORS[Math.abs(hash) % COURSE_COLORS.length];
+      }
+      function calcCurrentWeek() {
+        const w1 = new Date(2026, 2, 2); // month is 0-indexed, so March 2 = month 2
+        const today = new Date();
+        const diff = Math.floor((today - w1) / (86400000 * 7));
+        return Math.max(1, Math.min(20, diff + 1));
+      }
+      function getWeekDates(week) {
+        const w1 = new Date(2026, 2, 2);
+        const monday = new Date(w1);
+        monday.setDate(monday.getDate() + (week - 1) * 7);
+        const dates = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(monday);
+          d.setDate(d.getDate() + i);
+          dates.push(d);
+        }
+        return dates;
+      }
+      async function loadMySchedule(weekNum) {
+        if (weekNum === undefined) weekNum = calcCurrentWeek();
+        try {
+          const lessons = await api('/api/courses/my-schedule?week=' + weekNum);
+          const container = document.getElementById('res');
+          const dates = getWeekDates(weekNum);
+          const monthStr = (dates[0].getMonth() + 1) + '月';
+          const today = new Date();
+          const todayStr = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + today.getDate();
+          // Build grid data: weekday -> period -> array of courses
+          const grid = {};
+          lessons.forEach(l => {
+            if (!grid[l.schedule_weekday]) grid[l.schedule_weekday] = {};
+            if (!grid[l.schedule_weekday][l.schedule_period]) grid[l.schedule_weekday][l.schedule_period] = [];
+            grid[l.schedule_weekday][l.schedule_period].push(l);
+          });
+          // Week selector
+          let headerHtml = '<div class="schedule-header">';
+          headerHtml += '<div class="week-selector-wrap">';
+          headerHtml += '<h2 onclick="toggleWeekDropdown()">第<span id="currentWeekNum">' + weekNum + '</span>周 <span class="arrow" id="weekArrow">▼</span></h2>';
+          headerHtml += '<div class="week-dropdown" id="weekDropdown">';
+          for (let w = 1; w <= 20; w++) {
+            headerHtml += '<div class="item' + (w === weekNum ? ' active' : '') + '" onclick="selectWeek(' + w + ')">第' + w + '周</div>';
+          }
+          headerHtml += '</div></div>';
+          headerHtml += '<div class="sub">2025-2026 第2学期</div></div>';
+          // Grid
+          let gridHtml = '<div class="sched-grid">';
+          // Corner cell + date headers
+          gridHtml += '<div class="cell cell-header" style="background:#f1f5f9;"></div>';
+          for (let d = 0; d < 7; d++) {
+            const date = dates[d];
+            const dateNum = date.getDate();
+            const dateStr = date.getFullYear() + '-' + (date.getMonth()+1) + '-' + dateNum;
+            const isToday = dateStr === todayStr;
+            gridHtml += '<div class="cell cell-header">' + WEEKDAY_SHORT[d] + '<div class="date' + (isToday ? ' today' : '') + '">' + dateNum + '</div></div>';
+          }
+          // Month label (vertical text on left) - simplified: we'll put month in the corner area
+          // Actually, put month in the top-left corner
+          // Let's overwrite the corner cell
+          // Actually, show month above the day columns
+          // Grid rows for each period
+          for (let p = 0; p < PERIODS.length; p++) {
+            const period = PERIODS[p];
+            gridHtml += '<div class="cell cell-time"><div class="period">' + period.label + '</div><div>' + period.time + '</div></div>';
+            for (let d = 0; d < 7; d++) {
+              const weekday = '星期' + WEEKDAY_SHORT[d];
+              const courses = (grid[weekday] && grid[weekday][period.key]) || [];
+              if (courses.length > 0) {
+                let cellHtml = '';
+                courses.forEach(c => {
+                  const color = getCourseColor(c.lesson_name);
+                  const outClass = c.in_week ? '' : ' out-week';
+                  cellHtml += '<div class="course-card' + outClass + '" style="background:' + color + ';">'
+                    + '<div class="name">' + escapeHtml(c.lesson_name) + '</div>'
+                    + (c.location ? '<div class="loc">' + escapeHtml(c.location) + '</div>' : '')
+                    + '</div>';
+                });
+                gridHtml += '<div class="cell">' + cellHtml + '</div>';
+              } else {
+                gridHtml += '<div class="cell"><div class="cell-empty">-</div></div>';
+              }
+            }
+          }
+          gridHtml += '</div>';
+          container.innerHTML = headerHtml + '<div style="font-size:12px;color:#94a3b8;margin-bottom:8px;text-align:right;">' + monthStr + '</div>' + gridHtml;
+        } catch(e) {
+          document.getElementById('res').innerHTML = '<div style="text-align:center;color:#64748b;padding:40px;">加载失败：' + escapeHtml(e.message) + '</div>';
+        }
+      }
+      function toggleWeekDropdown() {
+        document.getElementById('weekDropdown').classList.toggle('show');
+        document.getElementById('weekArrow').classList.toggle('open');
+      }
+      function selectWeek(w) {
+        document.getElementById('weekDropdown').classList.remove('show');
+        document.getElementById('weekArrow').classList.remove('open');
+        loadMySchedule(w);
+      }
+      // Click outside to close week dropdown
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.week-selector-wrap')) {
+          const dd = document.getElementById('weekDropdown');
+          if (dd) dd.classList.remove('show');
+          const ar = document.getElementById('weekArrow');
+          if (ar) ar.classList.remove('open');
+        }
+      });
       let currentEventDetail = null;
       function showEventList() {
         document.getElementById("eventDetailView").style.display = "none";
