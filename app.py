@@ -425,10 +425,16 @@ def _create_course_chat_rooms(conn):
         lesson_id = lesson[0]
         lesson_name = lesson[1]
         teacher_uid = lesson[2]
+        schedule_weekday = lesson[3]
+        schedule_period = lesson[4]
         chat_id = 'chat_' + lesson_id
+        # 聊天室命名：星期+节次+课程名，如"周二78软件工程"
+        weekday_short = schedule_weekday.replace('星期', '周')
+        period_short = schedule_period.replace('-', '')
+        chat_name = weekday_short + period_short + lesson_name
         # 创建课程聊天室
         c.execute('INSERT OR IGNORE INTO groups_chat VALUES (?,?,?,?,?,?)',
-                  (chat_id, lesson_name + '聊天室', 'system', now, 'system', '课程'))
+                  (chat_id, chat_name, 'system', now, 'system', '课程'))
         # 加入该课程所有学生
         stus = c.execute('SELECT stu_uid FROM lesson_stu WHERE lesson_id=?', (lesson_id,)).fetchall()
         for stu in stus:
@@ -474,9 +480,13 @@ def _seed_data(conn):
         users_data = _load_users_from_json('users.json')
         if users_data:
             c.executemany('INSERT INTO users (uid,name,password,role,locked,unlock_time, login_fails,registed,phone) VALUES (?,?,?,?,?,?,?,?,?)', users_data)
-    if c.execute('SELECT COUNT(*) FROM lesson').fetchone()[0] == 0:
-        _load_lessons_from_json('lessons.json', conn)
-        _create_course_chat_rooms(conn)
+    # 每次启动都重新导入课程数据（确保 lessons.json 修改生效）
+    c.execute('DELETE FROM lesson_stu')
+    c.execute('DELETE FROM lesson')
+    c.execute('DELETE FROM group_members WHERE group_id IN (SELECT group_id FROM groups_chat WHERE category=\'课程\')')
+    c.execute('DELETE FROM groups_chat WHERE category=\'课程\'')
+    _load_lessons_from_json('lessons.json', conn)
+    _create_course_chat_rooms(conn)
     if c.execute('SELECT COUNT(*) FROM classes').fetchone()[0] == 0:
         _load_classes_from_json('class.json', conn)
         _create_class_chat_rooms(conn)
@@ -2140,12 +2150,26 @@ def ensure_default_groups(uid):
             else:
                 courses = []
 
+            conn.execute('DELETE FROM user_group_chats WHERE group_id=?', (course_group_id,))
             for course in courses:
                 lesson_id = course['lesson_id']
                 chat_id = 'chat_' + lesson_id
-                chat_name = course['lesson_name']
-                conn.execute('INSERT OR IGNORE INTO user_group_chats VALUES (?,?,?)',
+                weekday_short = course['schedule_weekday'].replace('星期', '周')
+                period_short = course['schedule_period'].replace('-', '')
+                chat_name = weekday_short + period_short + course['lesson_name']
+                conn.execute('INSERT INTO user_group_chats VALUES (?,?,?)',
                              (course_group_id, chat_id, chat_name))
+                # 同步课程聊天室成员（确保 lesson.json 修改能反映到聊天室）
+                conn.execute('DELETE FROM group_members WHERE group_id=?', (chat_id,))
+                stus = conn.execute('SELECT stu_uid FROM lesson_stu WHERE lesson_id=?',
+                                    (lesson_id,)).fetchall()
+                for stu in stus:
+                    conn.execute('INSERT INTO group_members VALUES (?,?,?,?,?)',
+                                 (chat_id, stu[0], 'member', now, 0))
+                teacher = course['teacher_uid']
+                if teacher:
+                    conn.execute('INSERT INTO group_members VALUES (?,?,?,?,?)',
+                                 (chat_id, teacher, 'admin', now, 0))
 
             # 将用户所在的班级/年级聊天室也关联到"课程和班级"群组
             class_ids = conn.execute('SELECT class_id FROM class_stu WHERE uid=?', (uid,)).fetchall()
@@ -3204,9 +3228,14 @@ def my_course_schedule():
         delta = (dt_date.today() - week1).days
         week = max(1, min(20, delta // 7 + 1))
     conn = get_db()
-    lessons = conn.execute('''SELECT l.* FROM lesson l
-        JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
-        WHERE ls.stu_uid=? ORDER BY l.schedule_weekday, l.schedule_period''', (uid,)).fetchall()
+    role = g.current_user['role']
+    if role == 'teacher':
+        lessons = conn.execute('''SELECT * FROM lesson
+            WHERE teacher_uid=? ORDER BY schedule_weekday, schedule_period''', (uid,)).fetchall()
+    else:
+        lessons = conn.execute('''SELECT l.* FROM lesson l
+            JOIN lesson_stu ls ON l.lesson_id = ls.lesson_id
+            WHERE ls.stu_uid=? ORDER BY l.schedule_weekday, l.schedule_period''', (uid,)).fetchall()
     conn.close()
     result = []
     for l in lessons:
